@@ -190,7 +190,7 @@ namespace ent
 
                 return writer.ToString();
             }
-            catch (Teigha.Runtime.Exception ex)
+            catch (Exception ex)
             {
                 Console.WriteLine("Ошибка при сериализации: {ex.Message}");
                 return null;

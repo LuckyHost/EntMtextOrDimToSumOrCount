@@ -9,12 +9,18 @@ using System.Xml.Serialization;
 
 
 
+
 #if nanoCAD
 using Teigha.DatabaseServices;
+using Application = HostMgd.ApplicationServices.Application;
+using HostMgd.ApplicationServices;
+using HostMgd.EditorInput;
 
 #else
 using Autodesk.AutoCAD.DatabaseServices;
-
+using Application = Autodesk.AutoCAD.ApplicationServices.Application;
+using Autodesk.AutoCAD.ApplicationServices;
+using Autodesk.AutoCAD.EditorInput;
 #endif
 
 #endregion Namespaces
@@ -23,7 +29,13 @@ namespace ent
 {
     [Serializable]
     public class ItemElement
+
     {
+               
+         Editor ed= Application.DocumentManager.MdiActiveDocument.Editor;
+
+
+
         private List<Handle> _AllHandel;
 		private List<ObjectId> _AllObjectID;
         private List<string> _SerializedAllObjectID;
@@ -57,9 +69,15 @@ namespace ent
         	get{ return _AllObjectID;}
         	
         	set{ _AllObjectID = value;
-        		SerializedAllObjectID = value.Select(objId => long.Parse( objId.ToString())).ToList();
-        		}
-        	
+                //value.ForEach(it =>ed.WriteMessage(it.ToString().Replace("(","")) );
+
+                    #if nanoCAD
+                SerializedAllObjectID = value.Select(objId => long.Parse(objId.ToString())).ToList();
+                    #else
+                SerializedAllObjectID = value.Select(objId => long.Parse(objId.ToString().Replace("(","").Replace(")",""))).ToList();
+                    #endif
+            }
+
         }
         
         

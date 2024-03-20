@@ -36,43 +36,43 @@ using Exception = Autodesk.AutoCAD.Runtime.Exception;
 
 namespace ent
 {
-    internal class EntMtextOrDimToSumOrCount
+    public class EntMtextOrDimToSumOrCount
     {
-       
+
         Document doc = Application.DocumentManager.MdiActiveDocument;
-            Database dbCurrent = Application.DocumentManager.MdiActiveDocument.Database;
+        Database dbCurrent = Application.DocumentManager.MdiActiveDocument.Database;
         private Editor ed;
         private Serialize _tools;
 
 
-        
-            
-        
+
+
+
         [CommandMethod("йф", CommandFlags.UsePickSet |
                       CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocad
         public void MakeSumOrCountCommand()
 
         {
             if (doc == null) { return; }
-            IsCheck _isCount=IsCheck.summ;
+            IsCheck _isCount = IsCheck.summ;
 
             ItemElement temp = new ItemElement();
 
             string IsCount = creatPromptKeywordOptions("Будем искать сумму,колличество или среднее?", new List<string> { "Сумму", "Колличество", "Среднее" }, 1);
-            if (IsCount == null ) { return; }
-            
-            List <string> searchElement = new List<string> { "Mtext", "Размеры" };
-            
-            if(IsCount == "Колличество")
-            {
-            	searchElement = new List<string> { "Mtext", "Размеры","МультиВыноски","Прочее" };
-           	}
-            
-            
-            string IsItem = creatPromptKeywordOptions("Над чем будет производить операции?",searchElement, 2);
+            if (IsCount == null) { return; }
 
-            if (IsItem == null ) { return; }
-            
+            List<string> searchElement = new List<string> { "Mtext", "Размеры" };
+
+            if (IsCount == "Колличество")
+            {
+                searchElement = new List<string> { "Mtext", "Размеры", "МультиВыноски", "Прочее" };
+            }
+
+
+            string IsItem = creatPromptKeywordOptions("Над чем будет производить операции?", searchElement, 2);
+
+            if (IsItem == null) { return; }
+
 
             if (IsCount == "Колличество")
             {
@@ -94,39 +94,39 @@ namespace ent
                     return;
                 }
             }
-            
+
             if (IsItem == "Размеры")
             {
                 temp = getDimension(_isCount);
-                
+
                 if (temp == null)
                 {
                     return;
                 }
             }
-            
-             if (IsItem == "МультиВыноски")
+
+            if (IsItem == "МультиВыноски")
             {
                 temp = getOther(IsCheck.mleader);
-                
+
                 if (temp == null)
                 {
                     return;
                 }
             }
-             
-              if (IsItem == "Прочее")
+
+            if (IsItem == "Прочее")
             {
                 temp = getOther(IsCheck.other);
-                
+
                 if (temp == null)
                 {
                     return;
                 }
             }
-            
-            
-            
+
+
+
 
             if (temp.AllHandel.Count() == 0)
             {
@@ -143,13 +143,13 @@ namespace ent
 
             string xmlData = _tools.SerializeToXml<ItemElement>(temp);
             _tools.SaveXmlToXrecord(xmlData, perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
-            
-            
-            if(temp.ObjSelID.Count >0)
-                {
-                	SelectObjects(temp.ObjSelID);
-                	ed.WriteMessage("\n\n !!!!!!!!!!! \n\nЕсть фиктивные значения, я их все равно сложил, сейчас подсвечу. \n");
-                }
+
+
+            if (temp.ObjSelID.Count > 0)
+            {
+                SelectObjects(temp.ObjSelID);
+                ed.WriteMessage("\n\n !!!!!!!!!!! \n\nЕсть фиктивные значения, я их все равно сложил, сейчас подсвечу. \n");
+            }
 
         }
 
@@ -164,114 +164,147 @@ namespace ent
             {
                 PromptEntityOptions item = new PromptEntityOptions("\n Handl. Выберите объект(Mtext) что б вернуть выделение: \n");
                 PromptEntityResult perItem = ed.GetEntity(item);
-                
-                if (perItem.Status != PromptStatus.OK) 
+
+                if (perItem.Status != PromptStatus.OK)
                 {
-                	ed.WriteMessage("Отмена");
-                	return;
-                	
+                    ed.WriteMessage("Отмена");
+                    return;
+
                 }
 
                 ItemElement selectionItem = _tools.ShowExtensionDictionaryContents<ItemElement>(perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
                 if (selectionItem != null)
                 {
-                	ed.WriteMessage("Работаю асинхронно, засекаю время...");
+                    ed.WriteMessage("Работаю асинхронно, засекаю время...");
                     List<ObjectId> tempList = new List<ObjectId>();
                     Stopwatch stopwatch = new Stopwatch();
-                    
+
+                    ObjectId[] allentity;
                     using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
                     {
-                    	stopwatch.Start();
-                    	await Task.Run(() =>
-            	         {
-		                        // Используем транзакцию для открытия таблицы объектов
-		                        BlockTable bt = tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
-		                        BlockTableRecord modelSpace = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
-		
-		                        ObjectId[] allentity = modelSpace.Cast<ObjectId>().ToArray();
-		                        
-		                        //Переделал в паралельные потоки 
-		                        Parallel.ForEach(selectionItem.SerializedAllHandel,itemHandelString =>
-		                        //foreach (string itemHandelString in selectionItem.SerializedAllHandel)
-		                        {
-		                        	foreach (ObjectId objectId in allentity)
-		                            {
-		                                Entity entity = tr.GetObject(objectId, OpenMode.ForRead) as Entity;
-		                                
-		
-		                                // Проверяем, совпадает ли handle объекта с искомым
-		                                if (entity != null && entity.Handle.ToString() == itemHandelString)
-		                                {
-		                                    //Добавляем Object ID Если handek равын
-		                                    tempList.Add(objectId);
-		                                    break;
-		                                }
-		                            }
-		                        });
-    	               });
-                    	
-                    	
-                    	stopwatch.Stop();
-                    	ed.WriteMessage("Прошло с момента операции:  "+stopwatch.Elapsed.TotalSeconds+" c.");
-                	tr.Commit();
-            		SelectObjects(tempList);
+                        // Используем транзакцию для открытия таблицы объектов
+                        BlockTable bt = tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
+                        BlockTableRecord modelSpace = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
+                        allentity = modelSpace.Cast<ObjectId>().ToArray();
+                        tr.Commit();
                     }
+
+                    using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+                    {
+                        stopwatch.Start();
+                        await Task.Run
+                        (
+                                () =>
+                             {
+
+                                 foreach (string itemHandelString in selectionItem.SerializedAllHandel)
+                                 {
+                                     foreach (ObjectId objectId in allentity)
+                                     {
+                                         Entity entity = tr.GetObject(objectId, OpenMode.ForRead) as Entity;
+
+                                         if (entity != null && entity.Handle.ToString() == itemHandelString)
+                                         {
+                                             // Добавляем ObjectID, если handle равны
+                                             tempList.Add(objectId);
+                                             // Может потребоваться прервать внутренний цикл, если соответствие найдено
+                                             break;
+                                         }
+                                     }
+                                 }
+
+
+                                 /*
+                                 //Переделал в паралельные потоки 
+                                 Parallel.ForEach
+                                 (selectionItem.SerializedAllHandel, itemHandelString =>
+                                 //foreach (string itemHandelString in selectionItem.SerializedAllHandel)
+                                     {
+                                         foreach (ObjectId objectId in allentity)
+                                         {
+                                             Entity entity = tr.GetObject(objectId, OpenMode.ForWrite) as Entity;
+                                             if (entity == null)
+                                             {
+                                                 entity = tr.TransactionManager.GetObject(objectId, OpenMode.ForWrite) as Entity;
+                                             }
+
+                                             // Проверяем, совпадает ли handle объекта с искомым
+                                             if (entity != null && entity.Handle.ToString() == itemHandelString)
+                                             {
+                                                 //Добавляем Object ID Если handek равын
+                                                 tempList.Add(objectId);
+                                                 break;
+                                             }
+                                         }
+                                     }
+                                 );*/
+                             }
+                         );
+
+
+                        stopwatch.Stop();
+                        ed.WriteMessage("Прошло с момента операции:  " + stopwatch.Elapsed.TotalSeconds + " c.");
+                        tr.Commit();
+                        SelectObjects(tempList);
+                    }
+
                 }
             }
             catch (Exception ex)
             {
-            	ed.WriteMessage(ex.ToString());
-            	return;
+                ed.WriteMessage(ex.ToString());
+                return;
             }
 
         }
-        
-         [CommandMethod("йффф", CommandFlags.UsePickSet |
-                       CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocad
-        public  void inDataSummObjId()
+
+        [CommandMethod("йффф", CommandFlags.UsePickSet |
+                      CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocad
+        public void inDataSummObjId()
 
         {
             if (doc == null) return;
 
-                PromptEntityOptions item = new PromptEntityOptions("\n ObjectID Выберите объект(Mtext) что б вернуть выделение: \n");
-                PromptEntityResult perItem = ed.GetEntity(item);
-                ItemElement selectionItem = _tools.ShowExtensionDictionaryContents<ItemElement>(perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
-                if (perItem.Status != PromptStatus.OK) 
-                {
-                	ed.WriteMessage("Отмена");
-                	return;
-            	}
-			try
-       		 {
+            PromptEntityOptions item = new PromptEntityOptions("\n ObjectID Выберите объект(Mtext) что б вернуть выделение: \n");
+            PromptEntityResult perItem = ed.GetEntity(item);
+            ItemElement selectionItem = _tools.ShowExtensionDictionaryContents<ItemElement>(perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
+            if (perItem.Status != PromptStatus.OK)
+            {
+                ed.WriteMessage("Отмена");
+                return;
+            }
+            try
+            {
                 if (selectionItem != null)
                 {
-                	List<ObjectId> tempList = new List<ObjectId>();
-                		
-                	if (selectionItem.SerializedAllObjectID.Any())
-                		
-                	{
-                        tempList =selectionItem.SerializedAllObjectID.Select(objId => new ObjectId( new IntPtr( objId) )).Where(objId=> objId.IsValid & !objId.IsErased & !objId.IsNull).ToList();
-                		SelectObjects(tempList);
-                	}
-                	else
-                	{
-                		return ;
-                	}
-                	
+                    List<ObjectId> tempList = new List<ObjectId>();
+
+                    if (selectionItem.SerializedAllObjectID.Any())
+
+                    {
+                        //tempList = selectionItem.SerializedAllObjectID.Select(objId => new ObjectId(new IntPtr(objId))).Where(objId => objId.IsValid & !objId.IsErased & !objId.IsNull).ToList();
+                        tempList = selectionItem.SerializedAllObjectID.Select(objId => new ObjectId(new IntPtr(objId))).ToList();
+                        SelectObjects(tempList);
+                    }
+                    else
+                    {
+                        return;
+                    }
+
                 }
-                
+
             }
             catch (Exception ex)
             {
-            	ed.WriteMessage("Не могу найти по Object ID(использовать только в ТЕКУЩЕЙ СЕССИИ), возможно надо по Handel.");
-            	
-            	return;
-               
+                ed.WriteMessage("Не могу найти по Object ID(использовать только в ТЕКУЩЕЙ СЕССИИ), возможно надо по Handel.");
+
+                return;
+
             }
 
         }
-        
-        
+
+
 
         private ItemElement getMext(IsCheck Is)
         {
@@ -302,12 +335,17 @@ namespace ent
                                     MText getObject2 = (MText)(object)entity;
                                     tempListHandle.Add(entity.ObjectId.Handle);
                                     tempObjectID.Add(entity.ObjectId);
-                                    
+
                                     double doleValue = 0;
+
+#if nanoCAD
                                     bool isAdd = double.TryParse(getObject2.Text.Trim().Replace(".", ","), out doleValue);
+#else
+                                    bool isAdd = double.TryParse(getObject2.Contents.Replace(",", "."), out doleValue);
+#endif
 
                                     if (isAdd)
-                                  	{
+                                    {
                                         resultItem.result = resultItem.result + doleValue;
                                     }
                                     else
@@ -327,7 +365,7 @@ namespace ent
                 resultItem.AllObjectID = new List<ObjectId>(tempObjectID);
             }
 
-            if (Is ==  IsCheck.count)
+            if (Is == IsCheck.count)
             {
                 resultItem.result = resultItem.AllHandel.Count();
             }
@@ -338,7 +376,7 @@ namespace ent
             }
             return resultItem;
         }
-        
+
         private ItemElement getOther(IsCheck Is)
         {
             ItemElement resultItem = new ItemElement();
@@ -363,19 +401,19 @@ namespace ent
 
                             if (entity != null)
                             {
-                            	if(Is== IsCheck.mleader)
-                            	{
-                            		if (entity is MLeader)
-	                                {
-	                                    tempListHandle.Add(entity.ObjectId.Handle);
-	                                    tempObjectID.Add(entity.ObjectId);
-	                                }
+                                if (Is == IsCheck.mleader)
+                                {
+                                    if (entity is MLeader)
+                                    {
+                                        tempListHandle.Add(entity.ObjectId.Handle);
+                                        tempObjectID.Add(entity.ObjectId);
+                                    }
                                 }
-                            	else
-                            	{
-                            		tempListHandle.Add(entity.ObjectId.Handle);
-                            		tempObjectID.Add(entity.ObjectId);
-                            	}
+                                else
+                                {
+                                    tempListHandle.Add(entity.ObjectId.Handle);
+                                    tempObjectID.Add(entity.ObjectId);
+                                }
                             }
                             trAdding.Commit();
                         }
@@ -386,10 +424,10 @@ namespace ent
             }
 
             resultItem.result = resultItem.AllHandel.Count();
-            
+
             return resultItem;
         }
-        
+
 
 
         private ItemElement getDimension(IsCheck Is)
@@ -397,8 +435,8 @@ namespace ent
             ItemElement resultItem = new ItemElement();
             List<Handle> tempListHandle = new List<Handle>();
             List<ObjectId> tempObjectID = new List<ObjectId>();
-            
-           
+
+
             PromptSelectionResult acSSPrompt = ed.GetSelection();
 
             if (acSSPrompt.Status == PromptStatus.OK)
@@ -409,8 +447,8 @@ namespace ent
                 {
                     if (acSSObj != null)
                     {
-                    	
-                    	
+
+
                         using (Transaction trAdding = dbCurrent.TransactionManager.StartTransaction())
                         {
                             ObjectId objId = acSSObj.ObjectId;
@@ -418,55 +456,55 @@ namespace ent
                             //Проверка на dim
                             if (trAdding.GetObject(objId, OpenMode.ForRead) is Dimension)
                             {
-                            	
+
                                 Dimension entity = trAdding.GetObject(objId, OpenMode.ForRead) as Dimension;
                                 tempListHandle.Add(entity.ObjectId.Handle);
                                 tempObjectID.Add(entity.ObjectId);
-                                
-                                string resultMeasurement =entity.FormatMeasurement(entity.Measurement,"");
-                                
-                                
+
+                                string resultMeasurement = entity.FormatMeasurement(entity.Measurement, "");
+
+
                                 if (!string.IsNullOrEmpty(entity.Prefix) | !string.IsNullOrEmpty(entity.Suffix))
                                 {
-                                	string Prefix =" ";
-                                	string Suffix =" ";
-                                	
-                                	if(!string.IsNullOrEmpty(entity.Prefix))
-                                	{
-                                		Prefix=entity.Prefix;
-                                	}
-                                	if(!string.IsNullOrEmpty(entity.Suffix))
-                                	{
-                                		Suffix=entity.Suffix;
-                                	}
-                                	
-                               	//ed.WriteMessage("DimensionText  Suff isNull ?: "+ string.IsNullOrEmpty(entity.Prefix)+" "+entity.Prefix);
-                               // ed.WriteMessage("DimensionText isPref isNull?: "+ string.IsNullOrEmpty(entity.Suffix)+ " "+entity.Suffix);
-                               		
-                                resultMeasurement=resultMeasurement.Replace(Prefix,"").Replace(Suffix,"").Replace("\\A1;","");
-                                
+                                    string Prefix = " ";
+                                    string Suffix = " ";
+
+                                    if (!string.IsNullOrEmpty(entity.Prefix))
+                                    {
+                                        Prefix = entity.Prefix;
+                                    }
+                                    if (!string.IsNullOrEmpty(entity.Suffix))
+                                    {
+                                        Suffix = entity.Suffix;
+                                    }
+
+                                    //ed.WriteMessage("DimensionText  Suff isNull ?: "+ string.IsNullOrEmpty(entity.Prefix)+" "+entity.Prefix);
+                                    // ed.WriteMessage("DimensionText isPref isNull?: "+ string.IsNullOrEmpty(entity.Suffix)+ " "+entity.Suffix);
+
+                                    resultMeasurement = resultMeasurement.Replace(Prefix, "").Replace(Suffix, "").Replace("\\A1;", "");
+
                                 }
                                 else
                                 {
-                                	 resultMeasurement=entity.FormatMeasurement(entity.Measurement,"").Replace("\\A1;","");
-                                
+                                    resultMeasurement = entity.FormatMeasurement(entity.Measurement, "").Replace("\\A1;", "");
+
                                 }
-                                
-                               
-                                
-                                if (!string.IsNullOrEmpty(entity.DimensionText)) 
+
+
+
+                                if (!string.IsNullOrEmpty(entity.DimensionText))
                                 {
-                                	//ed.WriteMessage("DimensionText: "+entity.DimensionText);
-                                	//ed.WriteMessage("resultMeasurement: "+resultMeasurement );
-                                	
-                                	
-                                	double doleValue = 0;
+                                    //ed.WriteMessage("DimensionText: "+entity.DimensionText);
+                                    //ed.WriteMessage("resultMeasurement: "+resultMeasurement );
+
+
+                                    double doleValue = 0;
                                     bool isAdd = double.TryParse(entity.DimensionText.Trim().Replace(",", "."), out doleValue);
 
                                     if (isAdd)
-                                  	{
-                                    	//Фиктивные
-                                    	resultItem.ObjSelID.Add(objId);
+                                    {
+                                        //Фиктивные
+                                        resultItem.ObjSelID.Add(objId);
                                         resultItem.result = resultItem.result + doleValue;
                                     }
                                     else
@@ -476,38 +514,44 @@ namespace ent
                                         ed.WriteMessage("\n\n Ты где-то ошибся, есть нечисловой текст \n Перепроверь, я тут подожду.");
                                         return null;
                                     }
-                                    
-                                    
-                                
+
+
+
                                 }
                                 else
                                 {
-                                	                                		
-                                	double temp;
-                                	
-                                	//Тут в чем то косяк в реплйсе
-                                	if (double.TryParse(resultMeasurement.Replace(".",","), out temp))
-										{
-										    //ed.WriteMessage("temp: "+temp );
-										}
-									else
-										{
-											ed.WriteMessage("Невозможно преобразовать строку в число.");
-										}
-									
-								resultItem.result = resultItem.result+temp ;
+
+                                    double temp;
+
+                                    //Тут в чем то косяк в реплйсе
+
+#if nanoCAD
+                                    if (double.TryParse(resultMeasurement.Replace(".", ","), out temp))
+#else
+                                    if (double.TryParse(resultMeasurement.Replace(",", "."), out temp))
+#endif
+
+                                    {
+                                        //ed.WriteMessage("temp: "+temp );
+                                    }
+                                    else
+                                    {
+                                        ed.WriteMessage("Невозможно преобразовать строку в число.");
+                                    }
+
+                                    resultItem.result = resultItem.result + temp;
                                 }
-                                
-                                
-                                
+
+
+
                                 //resultItem.result = resultItem.result + Math.Round(entity.Measurement, entity.Dimdec);
                             }
                             trAdding.Commit();
                         }
                     }
                 }
-                resultItem.AllHandel= tempListHandle;
-				resultItem.AllObjectID = new List<ObjectId>(tempObjectID);				
+                resultItem.AllHandel = tempListHandle;
+                resultItem.AllObjectID = new List<ObjectId>(tempObjectID);
             }
 
             if (Is == IsCheck.count)
@@ -557,53 +601,53 @@ namespace ent
 
         public void UpdateTextById(ObjectId textId, string newText, int colorIndex)
         {
-            
-                using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+
+            using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+            {
+                try
                 {
-                    try
+                    MText mtextEntity = tr.GetObject(textId, OpenMode.ForWrite) as MText;
+
+                    if (mtextEntity != null)
                     {
-                        MText mtextEntity = tr.GetObject(textId, OpenMode.ForWrite) as MText;
+                        // Изменяем текст
+                        mtextEntity.Contents = newText;
 
-                        if (mtextEntity != null)
-                        {
-                            // Изменяем текст
-                            mtextEntity.Contents = newText;
+                        // Пример других изменений свойств (необязательно)
+                        mtextEntity.ColorIndex = colorIndex; // Например, изменяем цвет текста
 
-                            // Пример других изменений свойств (необязательно)
-                            mtextEntity.ColorIndex = colorIndex; // Например, изменяем цвет текста
-
-                            // Завершаем транзакцию
-                            tr.Commit();
-                        }
-                        else
-                        {
-                            // Обработка случая, если не удалось получить объект MText
-                            ed.WriteMessage("Unable to open MText with ObjectId: {0}\n", textId);
-                        }
+                        // Завершаем транзакцию
+                        tr.Commit();
                     }
-
-                    catch (System.Exception ex)
+                    else
                     {
-                        // Обработка ошибок
-                        // ed.WriteMessage("Error updating MText: {0}\n", ex.Message);
-                        tr.Abort();
+                        // Обработка случая, если не удалось получить объект MText
+                        ed.WriteMessage("Unable to open MText with ObjectId: {0}\n", textId);
                     }
                 }
-            
+
+                catch (System.Exception ex)
+                {
+                    // Обработка ошибок
+                    // ed.WriteMessage("Error updating MText: {0}\n", ex.Message);
+                    tr.Abort();
+                }
+            }
+
         }
 
         public void SelectObjects(List<ObjectId> objectIds)
         {
-			try
-        	{
-        		ed.SetImpliedSelection(objectIds.ToArray());
-    		}
-        	
-        	catch (Exception ex)
-        	{
-        		ed.WriteMessage("Я думаю, скорее всего надо сделать восстановление по Handel.");
-        		return;
-        	}
+            try
+            {
+                ed.SetImpliedSelection(objectIds.ToArray());
+            }
+
+            catch (Exception ex)
+            {
+                ed.WriteMessage("Я думаю, скорее всего надо сделать восстановление по Handel.");
+                return;
+            }
         }
 
 
@@ -652,7 +696,7 @@ namespace ent
 
         public EntMtextOrDimToSumOrCount()
         {
-            
+
             this.ed = Application.DocumentManager.MdiActiveDocument.Editor;
             this._tools = new Serialize(doc, dbCurrent, ed);
             ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2024г.");
@@ -661,13 +705,13 @@ namespace ent
             ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
             ed.WriteMessage("| йффф - Восстановление набора по ObjectID. ТОЛЬКО ДЛЯ ТЕКУЩЕГО СЕАНСА. Восстаналивает быстро.");
             ed.WriteMessage("\n");
-			
+
         }
 
-	
-        
-       
-        
+
+
+
+
     }
 }
 

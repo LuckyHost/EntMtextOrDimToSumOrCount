@@ -32,23 +32,28 @@
     <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
-    <DefineConstants>TRACE;DEBUG;nanoCAD2</DefineConstants>
+    <DefineConstants>TRACE;DEBUG;nanoCAD</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="AcCoreMgd">
       <HintPath>..\..\..\..\..\Autodesk\Autodesk_ObjectARX_2018_Win_64_and_32_Bit\inc\AcCoreMgd.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="AcDbMgd">
       <HintPath>..\..\..\..\..\Autodesk\Autodesk_ObjectARX_2018_Win_64_and_32_Bit\inc\AcDbMgd.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="AcMgd">
       <HintPath>..\..\..\..\..\Autodesk\Autodesk_ObjectARX_2018_Win_64_and_32_Bit\inc\AcMgd.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="hostdbmgd">
       <HintPath>..\..\..\Documents\NC_SDK_22.0.5944.3726.6053\include-x64\hostdbmgd.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="hostmgd">
       <HintPath>..\..\..\Documents\NC_SDK_22.0.5944.3726.6053\include-x64\hostmgd.dll</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Microsoft.CSharp">
       <RequiredTargetFramework>4.0</RequiredTargetFramework>
