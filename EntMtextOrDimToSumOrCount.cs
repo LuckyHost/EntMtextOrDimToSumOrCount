@@ -306,6 +306,106 @@ namespace ent
 
 
 
+
+        [CommandMethod("цф", CommandFlags.UsePickSet |
+                      CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocad
+        public void DecomposePL()
+
+        {
+            if (doc == null) return;
+
+            PromptEntityOptions item = new PromptEntityOptions("\n Выберите полилинию для разложения: \n");
+            PromptEntityResult perItem = ed.GetEntity(item);
+            if (perItem.Status != PromptStatus.OK)
+            {
+                ed.WriteMessage("Отмена");
+                return;
+            }
+            // Начинаем транзакцию
+            using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+            {
+
+               
+                    
+                        if (perItem != null)
+                        {
+                            // Открываем объект для чтения
+                            Entity ent = tr.GetObject(perItem.ObjectId, OpenMode.ForRead) as Entity;
+
+                            if (ent != null)
+                            {
+                                // Проверяем, является ли объект полилинией (2D или 3D)
+                                if (ent is Polyline)
+                                {
+                                                Polyline polyline = ent as Polyline;
+                                                ed.WriteMessage($"\nВыбрана полилиния с {polyline.NumberOfVertices} вершинами.");
+
+                            // Создаем новую полилинию для прямого пути
+                            Polyline newPolyline = new Polyline();
+                            double currentX = polyline.GetPoint2dAt(0).X; // Начальная координата X для новой полилинии
+                            double currentY = polyline.GetPoint2dAt(0).Y; // Начальная координата X для новой полилинии
+                            int index = 0;
+
+                            // Проходим по каждому сегменту полилинии
+                            for (int i = 0; i < polyline.NumberOfVertices - 1; i++)
+                                        {
+                                            // Получаем две точки: текущую и следующую вершины
+                                            Point3d pt1 = polyline.GetPoint3dAt(i);
+                                            Point3d pt2 = polyline.GetPoint3dAt(i + 1);
+
+                                            // Вычисляем длину сегмента как расстояние между точками
+                                            double segmentLength = pt1.DistanceTo(pt2);
+                                            ed.WriteMessage($"\nДлина сегмента {i + 1}: {segmentLength}");
+
+                                // Добавляем вершину в новую полилинию
+                                newPolyline.AddVertexAt(index, new Point2d(currentX, currentY), 0, 0, 0);
+                                currentX += segmentLength;
+                                index++;
+                            }
+
+                                        // Обработка последнего сегмента, если полилиния замкнута
+                                        if (polyline.Closed)
+                                        {
+                                            Point3d pt1 = polyline.GetPoint3dAt(polyline.NumberOfVertices - 1);
+                                            Point3d pt2 = polyline.GetPoint3dAt(0);
+                                            double segmentLength = pt1.DistanceTo(pt2);
+                                            ed.WriteMessage($"\nДлина последнего сегмента: {segmentLength}");
+                                        }
+
+
+                            // Добавляем новую полилинию в чертеж
+                            BlockTable bt = tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
+                            BlockTableRecord btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+
+                            btr.AppendEntity(newPolyline);
+                            tr.AddNewlyCreatedDBObject(newPolyline, true);
+
+                            ed.WriteMessage($"\nНовая полилиния построена с {newPolyline.NumberOfVertices} вершинами.");
+
+                        
+                        }
+                        else if (ent is Polyline2d)
+                                {
+                                    Polyline2d polyline2d = ent as Polyline2d;
+                                    ed.WriteMessage("\nВыбрана 2D полилиния.");
+                                }
+                                else
+                                {
+                                    ed.WriteMessage("\nВыбранный объект не является полилинией.");
+                                }
+                            }
+                        }
+                    
+
+                    // Завершаем транзакцию
+                    tr.Commit();
+                
+            }
+
+        }
+
+
+
         private ItemElement getMext(IsCheck Is)
         {
             ItemElement resultItem = new ItemElement();
@@ -693,6 +793,75 @@ namespace ent
                 }
             }
         }
+
+
+
+        [CommandMethod("ListVisibleLayers")]
+        public void DisplayVisibleLayersInViewport()
+        {
+
+
+            using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+            {
+                // Определяем текущее пространство
+                Layout currentLayout = null; // Инициализируем переменную текущего макета
+                LayoutManager layoutManager = LayoutManager.Current;
+                if (layoutManager != null)
+                {
+                    ObjectId currentLayoutId = layoutManager.GetLayoutId(layoutManager.CurrentLayout); // Получаем идентификатор текущего макета
+                    if (!currentLayoutId.IsNull)
+                    {
+                        currentLayout = tr.GetObject(currentLayoutId, OpenMode.ForRead) as Layout; // Получаем сам объект макета
+                    }
+                }
+
+                // Проверяем, что объект текущего макета успешно получен
+                if (currentLayout != null)
+                {
+                    // Получаем имя текущего макета
+                    string currentSpace = currentLayout.LayoutName;
+
+                    // Создаем список для хранения имен видимых слоев
+                    HashSet<string> visibleLayers = new HashSet<string>();
+
+                    // Начинаем транзакцию
+                   
+                        // Открываем пространство модели
+                        BlockTable bt = (BlockTable)tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead);
+                        BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[currentSpace], OpenMode.ForRead);
+
+                        // Проходимся по всем объектам в пространстве модели
+                        foreach (ObjectId objId in btr)
+                        {
+                            Entity ent = tr.GetObject(objId, OpenMode.ForRead) as Entity;
+                            if (ent != null)
+                            {
+                                // Получаем имя слоя объекта и добавляем его в список видимых слоев
+                                string layerName = ent.Layer;
+                                visibleLayers.Add(layerName);
+                            }
+                        }
+
+                        // Завершаем транзакцию
+                        tr.Commit();
+                    
+
+                    // Выводим имена видимых слоев в консоль
+                    foreach (string layerName in visibleLayers)
+                    {
+                        ed.WriteMessage(layerName + "\n");
+                    }
+                }
+                else
+                {
+                    // Обработка ситуации, когда не удалось получить текущий макет
+                    // Например, выведем сообщение об ошибке
+                    ed.WriteMessage("Не удалось получить текущий макет.");
+                }
+            }
+
+        }
+
 
         public EntMtextOrDimToSumOrCount()
         {
