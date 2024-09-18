@@ -312,6 +312,8 @@ namespace ent
         public void DecomposePL()
 
         {
+
+            Double disZ = 0;
             if (doc == null) return;
 
             PromptEntityOptions item = new PromptEntityOptions("\n Выберите полилинию для разложения: \n");
@@ -324,21 +326,23 @@ namespace ent
             // Начинаем транзакцию
             using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
             {
+                // Добавляем новую полилинию в чертеж
+                BlockTable bt = tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
+                BlockTableRecord btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
 
-               
-                    
-                        if (perItem != null)
+
+                if (perItem != null)
+                {
+                    // Открываем объект для чтения
+                    Entity ent = tr.GetObject(perItem.ObjectId, OpenMode.ForRead) as Entity;
+
+                    if (ent != null)
+                    {
+                        // Проверяем, является ли объект полилинией (2D или 3D)
+                        if (ent is Polyline)
                         {
-                            // Открываем объект для чтения
-                            Entity ent = tr.GetObject(perItem.ObjectId, OpenMode.ForRead) as Entity;
-
-                            if (ent != null)
-                            {
-                                // Проверяем, является ли объект полилинией (2D или 3D)
-                                if (ent is Polyline)
-                                {
-                                                Polyline polyline = ent as Polyline;
-                                                ed.WriteMessage($"\nВыбрана полилиния с {polyline.NumberOfVertices} вершинами.");
+                            Polyline polyline = ent as Polyline;
+                            ed.WriteMessage($"\nВыбрана полилиния с {polyline.NumberOfVertices} вершинами.");
 
                             // Создаем новую полилинию для прямого пути
                             Polyline newPolyline = new Polyline();
@@ -348,14 +352,56 @@ namespace ent
 
                             // Проходим по каждому сегменту полилинии
                             for (int i = 0; i < polyline.NumberOfVertices - 1; i++)
-                                        {
-                                            // Получаем две точки: текущую и следующую вершины
-                                            Point3d pt1 = polyline.GetPoint3dAt(i);
-                                            Point3d pt2 = polyline.GetPoint3dAt(i + 1);
+                            {
+                                //Филтр полилиний и проверка на замкнутость
+                                SelectionFilter acSF = new SelectionFilter
+                                    (
+                                    new TypedValue[]
+                                        { new TypedValue((int)DxfCode.Start, "POINT")
+                                        }
 
-                                            // Вычисляем длину сегмента как расстояние между точками
-                                            double segmentLength = pt1.DistanceTo(pt2);
-                                            ed.WriteMessage($"\nДлина сегмента {i + 1}: {segmentLength}");
+                                    );
+
+
+                                // Создаем многоугольник, приближающий окружность с центром в текущей вершине и радиусом searchDistance
+                                Point3dCollection polygonPoints = createCirclePolygon(new Point3d(polyline.GetPoint2dAt(i).X, polyline.GetPoint2dAt(i).Y, 0), 0.2, 26);
+
+                                //Тут Полигон
+                                PromptSelectionResult acPSR = ed.SelectCrossingPolygon(polygonPoints, acSF);
+
+                                if (acPSR.Status == PromptStatus.OK)
+                                {
+                                    // Пройдите по найденным объектам
+                                    foreach (SelectedObject acSObj in acPSR.Value)
+                                    {
+                                        DBPoint point = tr.GetObject(acSObj.ObjectId, OpenMode.ForWrite) as DBPoint;
+                                        disZ = point.Position.Z;
+                                        ed.WriteMessage($"\nВыбран объект является точкой с координатами: X={point.Position.X}, Y={point.Position.Y}, Z={point.Position.Z}");
+                                        ed.WriteMessage(disZ.ToString());
+
+                                    }
+
+                                }
+                                else { ed.WriteMessage("ГДЕ-ТО Я не нашел рядом точки!"); return; }
+
+                                // Получаем две точки: текущую и следующую вершины
+                                Point3d pt1 = polyline.GetPoint3dAt(i);
+                                Point3d pt2 = polyline.GetPoint3dAt(i + 1);
+
+                                // Вычисляем длину сегмента как расстояние между точками
+                                double segmentLength = pt1.DistanceTo(pt2);
+                                //ed.WriteMessage($"\nДлина сегмента {i + 1}: {segmentLength}");
+
+                                
+
+                                Polyline ZPolyline = new Polyline();
+                                ZPolyline.AddVertexAt(0, new Point2d(currentX, currentY), 0, 0, 0);
+                                ZPolyline.AddVertexAt(1, new Point2d(currentX, currentY + disZ), 0, 0, 0);
+
+                                ed.WriteMessage(currentX.ToString(), currentY.ToString());
+                                btr.AppendEntity(ZPolyline);
+                                tr.AddNewlyCreatedDBObject(ZPolyline, true);
+
 
                                 // Добавляем вершину в новую полилинию
                                 newPolyline.AddVertexAt(index, new Point2d(currentX, currentY), 0, 0, 0);
@@ -363,43 +409,41 @@ namespace ent
                                 index++;
                             }
 
-                                        // Обработка последнего сегмента, если полилиния замкнута
-                                        if (polyline.Closed)
-                                        {
-                                            Point3d pt1 = polyline.GetPoint3dAt(polyline.NumberOfVertices - 1);
-                                            Point3d pt2 = polyline.GetPoint3dAt(0);
-                                            double segmentLength = pt1.DistanceTo(pt2);
-                                            ed.WriteMessage($"\nДлина последнего сегмента: {segmentLength}");
-                                        }
+                            // Обработка последнего сегмента, если полилиния замкнута
+                            if (polyline.Closed)
+                            {
+                                Point3d pt1 = polyline.GetPoint3dAt(polyline.NumberOfVertices - 1);
+                                Point3d pt2 = polyline.GetPoint3dAt(0);
+                                double segmentLength = pt1.DistanceTo(pt2);
+                                ed.WriteMessage($"\nДлина последнего сегмента: {segmentLength}");
+                            }
 
 
-                            // Добавляем новую полилинию в чертеж
-                            BlockTable bt = tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
-                            BlockTableRecord btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+
 
                             btr.AppendEntity(newPolyline);
                             tr.AddNewlyCreatedDBObject(newPolyline, true);
 
                             ed.WriteMessage($"\nНовая полилиния построена с {newPolyline.NumberOfVertices} вершинами.");
 
-                        
+
                         }
                         else if (ent is Polyline2d)
-                                {
-                                    Polyline2d polyline2d = ent as Polyline2d;
-                                    ed.WriteMessage("\nВыбрана 2D полилиния.");
-                                }
-                                else
-                                {
-                                    ed.WriteMessage("\nВыбранный объект не является полилинией.");
-                                }
-                            }
+                        {
+                            Polyline2d polyline2d = ent as Polyline2d;
+                            ed.WriteMessage("\nВыбрана 2D полилиния.");
                         }
-                    
+                        else
+                        {
+                            ed.WriteMessage("\nВыбранный объект не является полилинией.");
+                        }
+                    }
+                }
 
-                    // Завершаем транзакцию
-                    tr.Commit();
-                
+
+                // Завершаем транзакцию
+                tr.Commit();
+
             }
 
         }
@@ -825,26 +869,26 @@ namespace ent
                     HashSet<string> visibleLayers = new HashSet<string>();
 
                     // Начинаем транзакцию
-                   
-                        // Открываем пространство модели
-                        BlockTable bt = (BlockTable)tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead);
-                        BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[currentSpace], OpenMode.ForRead);
 
-                        // Проходимся по всем объектам в пространстве модели
-                        foreach (ObjectId objId in btr)
+                    // Открываем пространство модели
+                    BlockTable bt = (BlockTable)tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead);
+                    BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[currentSpace], OpenMode.ForRead);
+
+                    // Проходимся по всем объектам в пространстве модели
+                    foreach (ObjectId objId in btr)
+                    {
+                        Entity ent = tr.GetObject(objId, OpenMode.ForRead) as Entity;
+                        if (ent != null)
                         {
-                            Entity ent = tr.GetObject(objId, OpenMode.ForRead) as Entity;
-                            if (ent != null)
-                            {
-                                // Получаем имя слоя объекта и добавляем его в список видимых слоев
-                                string layerName = ent.Layer;
-                                visibleLayers.Add(layerName);
-                            }
+                            // Получаем имя слоя объекта и добавляем его в список видимых слоев
+                            string layerName = ent.Layer;
+                            visibleLayers.Add(layerName);
                         }
+                    }
 
-                        // Завершаем транзакцию
-                        tr.Commit();
-                    
+                    // Завершаем транзакцию
+                    tr.Commit();
+
 
                     // Выводим имена видимых слоев в консоль
                     foreach (string layerName in visibleLayers)
@@ -875,6 +919,20 @@ namespace ent
             ed.WriteMessage("| йффф - Восстановление набора по ObjectID. ТОЛЬКО ДЛЯ ТЕКУЩЕГО СЕАНСА. Восстаналивает быстро.");
             ed.WriteMessage("\n");
 
+        }
+
+        public static Point3dCollection createCirclePolygon(Point3d center, double radius, int segments)
+        {
+            Point3dCollection points = new Point3dCollection();
+            for (int i = 0; i < segments; i++)
+            {
+                double angle = 2 * Math.PI * i / segments;
+                double x = center.X + radius * Math.Cos(angle);
+                double y = center.Y + radius * Math.Sin(angle);
+                points.Add(new Point3d(x, y, 0));
+            }
+            points.Add(points[0]); // Замыкаем многоугольник, добавляя первую точку в конец
+            return points;
         }
 
 
