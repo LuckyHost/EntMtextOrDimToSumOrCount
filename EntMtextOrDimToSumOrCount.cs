@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using EntMtextOrDimToSumOrCount;
+
 
 
 
@@ -39,9 +41,6 @@ namespace ent
     public class EntMtextOrDimToSumOrCount
     {
 
-        Document doc = Application.DocumentManager.MdiActiveDocument;
-        Database dbCurrent = Application.DocumentManager.MdiActiveDocument.Database;
-        private Editor ed;
         private Serialize _tools;
 
 
@@ -53,7 +52,7 @@ namespace ent
         public void MakeSumOrCountCommand()
 
         {
-            if (doc == null) { return; }
+            if (MyOpenDocument.doc == null) { return; }
             IsCheck _isCount = IsCheck.summ;
 
             ItemElement temp = new ItemElement();
@@ -130,13 +129,13 @@ namespace ent
 
             if (temp.AllHandel.Count() == 0)
             {
-                ed.WriteMessage("\n\nПустой выбор.\n");
+                MyOpenDocument.ed.WriteMessage("\n\nПустой выбор.\n");
                 return;
             }
 
 
             PromptEntityOptions item = new PromptEntityOptions("\nВыберите объект(Mtext) куда сохранить результат: ");
-            PromptEntityResult perItem = ed.GetEntity(item);
+            PromptEntityResult perItem = MyOpenDocument.ed.GetEntity(item);
 
             //Обновляем текст в Мтекст
             UpdateTextById(perItem.ObjectId, temp.result.ToString(), 256);
@@ -148,7 +147,7 @@ namespace ent
             if (temp.ObjSelID.Count > 0)
             {
                 SelectObjects(temp.ObjSelID);
-                ed.WriteMessage("\n\n !!!!!!!!!!! \n\nЕсть фиктивные значения, я их все равно сложил, сейчас подсвечу. \n");
+                MyOpenDocument.ed.WriteMessage("\n\n !!!!!!!!!!! \n\nЕсть фиктивные значения, я их все равно сложил, сейчас подсвечу. \n");
             }
 
         }
@@ -158,16 +157,16 @@ namespace ent
         public async void inDataSumm()
 
         {
-            if (doc == null) return;
+            if (MyOpenDocument.doc == null) return;
 
             try
             {
                 PromptEntityOptions item = new PromptEntityOptions("\n Handl. Выберите объект(Mtext) что б вернуть выделение: \n");
-                PromptEntityResult perItem = ed.GetEntity(item);
+                PromptEntityResult perItem = MyOpenDocument.ed.GetEntity(item);
 
                 if (perItem.Status != PromptStatus.OK)
                 {
-                    ed.WriteMessage("Отмена");
+                    MyOpenDocument.ed.WriteMessage("Отмена");
                     return;
 
                 }
@@ -175,21 +174,21 @@ namespace ent
                 ItemElement selectionItem = _tools.ShowExtensionDictionaryContents<ItemElement>(perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
                 if (selectionItem != null)
                 {
-                    ed.WriteMessage("Работаю асинхронно, засекаю время...");
+                    MyOpenDocument.ed.WriteMessage("Работаю асинхронно, засекаю время...");
                     List<ObjectId> tempList = new List<ObjectId>();
                     Stopwatch stopwatch = new Stopwatch();
 
                     ObjectId[] allentity;
-                    using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+                    using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                     {
                         // Используем транзакцию для открытия таблицы объектов
-                        BlockTable bt = tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
+                        BlockTable bt = tr.GetObject(MyOpenDocument.dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
                         BlockTableRecord modelSpace = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
                         allentity = modelSpace.Cast<ObjectId>().ToArray();
                         tr.Commit();
                     }
 
-                    using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+                    using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                     {
                         stopwatch.Start();
                         await Task.Run
@@ -243,7 +242,7 @@ namespace ent
 
 
                         stopwatch.Stop();
-                        ed.WriteMessage("Прошло с момента операции:  " + stopwatch.Elapsed.TotalSeconds + " c.");
+                        MyOpenDocument.ed.WriteMessage("Прошло с момента операции:  " + stopwatch.Elapsed.TotalSeconds + " c.");
                         tr.Commit();
                         SelectObjects(tempList);
                     }
@@ -252,7 +251,7 @@ namespace ent
             }
             catch (Exception ex)
             {
-                ed.WriteMessage(ex.ToString());
+                MyOpenDocument.ed.WriteMessage(ex.ToString());
                 return;
             }
 
@@ -263,14 +262,14 @@ namespace ent
         public void inDataSummObjId()
 
         {
-            if (doc == null) return;
+            if (MyOpenDocument.doc == null) return;
 
             PromptEntityOptions item = new PromptEntityOptions("\n ObjectID Выберите объект(Mtext) что б вернуть выделение: \n");
-            PromptEntityResult perItem = ed.GetEntity(item);
+            PromptEntityResult perItem = MyOpenDocument.ed.GetEntity(item);
             ItemElement selectionItem = _tools.ShowExtensionDictionaryContents<ItemElement>(perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
             if (perItem.Status != PromptStatus.OK)
             {
-                ed.WriteMessage("Отмена");
+                MyOpenDocument.ed.WriteMessage("Отмена");
                 return;
             }
             try
@@ -296,7 +295,7 @@ namespace ent
             }
             catch (Exception ex)
             {
-                ed.WriteMessage("Не могу найти по Object ID(использовать только в ТЕКУЩЕЙ СЕССИИ), возможно надо по Handel.");
+                MyOpenDocument.ed.WriteMessage("Не могу найти по Object ID(использовать только в ТЕКУЩЕЙ СЕССИИ), возможно надо по Handel.");
 
                 return;
 
@@ -312,22 +311,26 @@ namespace ent
         public void DecomposePL()
 
         {
+            List<Point2d> listPoints = new List<Point2d>();
+            Layer.deleteObjectsOnLayer("Высоты_Makarov.D", false);
+            Layer.creatLayer("Высоты_Makarov.D", 179, 37, 0);
+
 
             Double disZ = 0;
-            if (doc == null) return;
+            if (MyOpenDocument.doc == null) return;
 
             PromptEntityOptions item = new PromptEntityOptions("\n Выберите полилинию для разложения: \n");
-            PromptEntityResult perItem = ed.GetEntity(item);
+            PromptEntityResult perItem = MyOpenDocument.ed.GetEntity(item);
             if (perItem.Status != PromptStatus.OK)
             {
-                ed.WriteMessage("Отмена");
+                MyOpenDocument.ed.WriteMessage("Отмена");
                 return;
             }
             // Начинаем транзакцию
-            using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+            using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
             {
                 // Добавляем новую полилинию в чертеж
-                BlockTable bt = tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
+                BlockTable bt = tr.GetObject(MyOpenDocument.dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
                 BlockTableRecord btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
 
 
@@ -342,7 +345,7 @@ namespace ent
                         if (ent is Polyline)
                         {
                             Polyline polyline = ent as Polyline;
-                            ed.WriteMessage($"\nВыбрана полилиния с {polyline.NumberOfVertices} вершинами.");
+                            MyOpenDocument.ed.WriteMessage($"\nВыбрана полилиния с {polyline.NumberOfVertices} вершинами.");
 
                             // Создаем новую полилинию для прямого пути
                             Polyline newPolyline = new Polyline();
@@ -367,7 +370,7 @@ namespace ent
                                 Point3dCollection polygonPoints = createCirclePolygon(new Point3d(polyline.GetPoint2dAt(i).X, polyline.GetPoint2dAt(i).Y, 0), 0.2, 26);
 
                                 //Тут Полигон
-                                PromptSelectionResult acPSR = ed.SelectCrossingPolygon(polygonPoints, acSF);
+                                PromptSelectionResult acPSR = MyOpenDocument.ed.SelectCrossingPolygon(polygonPoints, acSF);
 
                                 if (acPSR.Status == PromptStatus.OK)
                                 {
@@ -376,13 +379,13 @@ namespace ent
                                     {
                                         DBPoint point = tr.GetObject(acSObj.ObjectId, OpenMode.ForWrite) as DBPoint;
                                         disZ = point.Position.Z;
-                                        ed.WriteMessage($"\nВыбран объект является точкой с координатами: X={point.Position.X}, Y={point.Position.Y}, Z={point.Position.Z}");
-                                        ed.WriteMessage(disZ.ToString());
+                                        //MyOpenDocument.ed.WriteMessage($"\nВыбран объект является точкой с координатами: X={point.Position.X}, Y={point.Position.Y}, Z={point.Position.Z}");
+                                        // MyOpenDocument.ed.WriteMessage(disZ.ToString());
 
                                     }
 
                                 }
-                                else { ed.WriteMessage("ГДЕ-ТО Я не нашел рядом точки!"); return; }
+                                else { MyOpenDocument.ed.WriteMessage("ГДЕ-ТО Я не нашел рядом точки!"); return; }
 
                                 // Получаем две точки: текущую и следующую вершины
                                 Point3d pt1 = polyline.GetPoint3dAt(i);
@@ -392,18 +395,31 @@ namespace ent
                                 double segmentLength = pt1.DistanceTo(pt2);
                                 //ed.WriteMessage($"\nДлина сегмента {i + 1}: {segmentLength}");
 
-                                
+                                //Создать текст номера сегмента на самой линии
+                                Text.creatText("Высоты_Makarov.D", new Point2d(polyline.GetPoint3dAt(i).X + segmentLength / 2, polyline.GetPoint3dAt(i).Y), (index + 1).ToString(), "1", 54, 0);
 
+
+                                //Строим Pl высоты 
                                 Polyline ZPolyline = new Polyline();
                                 ZPolyline.AddVertexAt(0, new Point2d(currentX, currentY), 0, 0, 0);
                                 ZPolyline.AddVertexAt(1, new Point2d(currentX, currentY + disZ), 0, 0, 0);
 
-                                ed.WriteMessage(currentX.ToString(), currentY.ToString());
+                                //Добавляет в ЛистПоинтв
+                                listPoints.Add(new Point2d(currentX, currentY + disZ));
+
+                                //Создать текст высот
+                                Text.creatText("Высоты_Makarov.D", new Point2d(currentX, currentY + disZ), Math.Round(disZ, 2).ToString(), "1", 256, 2);
+                                Text.creatText("Высоты_Makarov.D", new Point2d(currentX + segmentLength / 2, currentY), Math.Round(segmentLength, 1).ToString(), "1", 171, 1);
+
+                                //MyOpenDocument.ed.WriteMessage(currentX.ToString(), currentY.ToString());
                                 btr.AppendEntity(ZPolyline);
                                 tr.AddNewlyCreatedDBObject(ZPolyline, true);
 
 
-                                // Добавляем вершину в новую полилинию
+                                //Создать текст номера сегмента
+                                Text.creatText("Высоты_Makarov.D", new Point2d(currentX + segmentLength / 2, currentY), (index + 1).ToString(), "1", 256, 2);
+
+                                // Добавляем вершину в новую полилинию Сама развертка
                                 newPolyline.AddVertexAt(index, new Point2d(currentX, currentY), 0, 0, 0);
                                 currentX += segmentLength;
                                 index++;
@@ -415,27 +431,27 @@ namespace ent
                                 Point3d pt1 = polyline.GetPoint3dAt(polyline.NumberOfVertices - 1);
                                 Point3d pt2 = polyline.GetPoint3dAt(0);
                                 double segmentLength = pt1.DistanceTo(pt2);
-                                ed.WriteMessage($"\nДлина последнего сегмента: {segmentLength}");
+                                MyOpenDocument.ed.WriteMessage($"\nДлина последнего сегмента: {segmentLength}");
                             }
-
-
 
 
                             btr.AppendEntity(newPolyline);
                             tr.AddNewlyCreatedDBObject(newPolyline, true);
 
-                            ed.WriteMessage($"\nНовая полилиния построена с {newPolyline.NumberOfVertices} вершинами.");
+                            //Строим PL ПО вершинам
+                            Draw.drawPolyline(listPoints, "Высоты_Makarov.D", 21, 0.5);
+                            MyOpenDocument.ed.WriteMessage($"\nНовая полилиния построена с {newPolyline.NumberOfVertices} вершинами.");
 
 
                         }
                         else if (ent is Polyline2d)
                         {
                             Polyline2d polyline2d = ent as Polyline2d;
-                            ed.WriteMessage("\nВыбрана 2D полилиния.");
+                            MyOpenDocument.ed.WriteMessage("\nВыбрана 2D полилиния.");
                         }
                         else
                         {
-                            ed.WriteMessage("\nВыбранный объект не является полилинией.");
+                            MyOpenDocument.ed.WriteMessage("\nВыбранный объект не является полилинией.");
                         }
                     }
                 }
@@ -448,6 +464,207 @@ namespace ent
 
         }
 
+        //По 4 точкам в пространстве 
+        [CommandMethod("цффф", CommandFlags.UsePickSet |
+                     CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocadw
+        public void FindZValue()
+        {
+
+            MyOpenDocument.ed.WriteMessage("Билинейная интерполяция.Она учитывает изменения по обеим осям. Надо выбрать 4 точки в пространстве");
+            // Начало транзакции
+            using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+            {
+
+                // Запрашиваем у пользователя ввод точки
+                PromptPointOptions ppo1 = new PromptPointOptions("\nУкажите местоположение точки (Верхний левый):");
+                PromptPointResult ppr1 = MyOpenDocument.ed.GetPoint(ppo1);
+
+                if (ppr1.Status != PromptStatus.OK)
+                {
+                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
+                    return;
+                }
+
+                // Запрашиваем у пользователя ввод точки
+                PromptPointOptions ppo2 = new PromptPointOptions("\nУкажите местоположение точки (Верхний правый):");
+                PromptPointResult ppr2 = MyOpenDocument.ed.GetPoint(ppo2);
+
+                if (ppr2.Status != PromptStatus.OK)
+                {
+                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
+                    return;
+                }
+
+                // Запрашиваем у пользователя ввод точки
+                PromptPointOptions ppo3 = new PromptPointOptions("\nУкажите местоположение точки (Нижний левый):");
+                PromptPointResult ppr3 = MyOpenDocument.ed.GetPoint(ppo3);
+
+                if (ppr3.Status != PromptStatus.OK)
+                {
+                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
+                    return;
+                }
+
+                // Запрашиваем у пользователя ввод точки
+                PromptPointOptions ppo4 = new PromptPointOptions("\nУкажите местоположение точки (Нижний правый):");
+                PromptPointResult ppr4 = MyOpenDocument.ed.GetPoint(ppo4);
+
+                if (ppr4.Status != PromptStatus.OK)
+                {
+                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
+                    return;
+                }
+
+
+                // Запрашиваем у пользователя ввод точки
+                PromptPointOptions ppo = new PromptPointOptions("\nУкажите местоположение точки:");
+                PromptPointResult ppr = MyOpenDocument.ed.GetPoint(ppo);
+
+                if (ppr.Status != PromptStatus.OK)
+                {
+                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
+                    return;
+                }
+
+                // Получаем координаты точки, которую указал пользователь
+                Point3d targetPoint = ppr.Value;
+                double Xtarget = targetPoint.X;
+                double Ytarget = targetPoint.Y;
+                MyOpenDocument.ed.WriteMessage("\n" + targetPoint.X + " " + targetPoint.Y + " " + targetPoint.Z);
+
+                // Определяем четыре известные точки (с известными Z)
+                Point3d p1 = ppr1.Value; // Верхний левый
+                Point3d p2 = ppr2.Value; // Верхний правый
+                Point3d p3 = ppr3.Value; // Нижний левый
+                Point3d p4 = ppr4.Value; // Нижний правый
+
+                // Проверяем, что точка находится в пределах прямоугольника
+                if (Xtarget >= p1.X && Xtarget <= p2.X && Ytarget >= p1.Y && Ytarget <= p3.Y)
+                {
+                    // Выполняем билинейную интерполяцию для нахождения значения Z
+                    double Ztarget = BilinearInterpolateZ(p1, p2, p3, p4, Xtarget, Ytarget);
+
+                    // Выводим значение Z в командное окно
+                    MyOpenDocument.ed.WriteMessage($"\nЗначение Z в указанной точке ({Xtarget}, {Ytarget}): {Ztarget}");
+                }
+                else
+                {
+                    MyOpenDocument.ed.WriteMessage("\nТочка выходит за пределы области интерполяции.");
+                }
+
+                // Завершаем транзакцию
+                tr.Commit();
+            }
+        }
+
+        // Метод для билинейной интерполяции
+        public double BilinearInterpolateZ(Point3d p1, Point3d p2, Point3d p3, Point3d p4, double Xtarget, double Ytarget)
+        {
+            double X1 = p1.X, Y1 = p1.Y, Z1 = p1.Z; // Точка 1 (верхний левый)
+            double X2 = p2.X, Y2 = p2.Y, Z2 = p2.Z; // Точка 2 (верхний правый)
+            double X3 = p3.X, Y3 = p3.Y, Z3 = p3.Z; // Точка 3 (нижний левый)
+            double X4 = p4.X, Y4 = p4.Y, Z4 = p4.Z; // Точка 4 (нижний правый)
+
+            // Билинейная интерполяция
+            double Ztarget =
+                Z1 * ((X2 - Xtarget) * (Y3 - Ytarget)) / ((X2 - X1) * (Y3 - Y1)) +
+                Z2 * ((Xtarget - X1) * (Y3 - Ytarget)) / ((X2 - X1) * (Y3 - Y1)) +
+                Z3 * ((X2 - Xtarget) * (Ytarget - Y1)) / ((X2 - X1) * (Y3 - Y1)) +
+                Z4 * ((Xtarget - X1) * (Ytarget - Y1)) / ((X2 - X1) * (Y3 - Y1));
+
+            return Ztarget;
+        }
+
+
+        [CommandMethod("цфф", CommandFlags.UsePickSet |
+                     CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocadw
+        public void FindZBetweenTwoPoints()
+        {
+            // Запрашиваем у пользователя ввод первой точки
+            PromptPointOptions ppo1 = new PromptPointOptions("\nУкажите первую точку:");
+            PromptPointResult ppr1 = MyOpenDocument.ed.GetPoint(ppo1);
+
+            if (ppr1.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nПервая точка не была выбрана.");
+                return;
+            }
+
+            Point3d point1 = ppr1.Value;
+
+            // Запрашиваем у пользователя ввод второй точки
+            PromptPointOptions ppo2 = new PromptPointOptions("\nУкажите вторую точку:");
+            PromptPointResult ppr2 = MyOpenDocument.ed.GetPoint(ppo2);
+
+            if (ppr2.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nВторая точка не была выбрана.");
+                return;
+            }
+
+            Point3d point2 = ppr2.Value;
+
+            /*
+            List<Point2d> listPoints = new List<Point2d>();
+            listPoints.Add(new Point2d(point1.X, point1.Y));
+            listPoints.Add(new Point2d(point2.X, point2.Y));*/
+
+            List<Point3d> listPoints = new List<Point3d>();
+
+            listPoints.Add(point1);
+            listPoints.Add(point2);
+
+            Layer.creatLayer("Высоты_Makarov.D", 179, 37, 0);
+           //ObjectId objID = Draw.drawPolyline(listPoints, "Высоты_Makarov.D", 21, 0.08);
+           ObjectId objID = Draw.DrawPolyline3d(listPoints, "Высоты_Makarov.D", 21);
+
+            // Запрашиваем у пользователя ввод целевой точки
+            PromptPointOptions ppoTarget = new PromptPointOptions("\nУкажите целевую точку:");
+            PromptPointResult pprTarget = MyOpenDocument.ed.GetPoint(ppoTarget);
+
+            if (pprTarget.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nЦелевая точка не была выбрана.");
+                return;
+            }
+
+            Point3d targetPoint = pprTarget.Value;
+
+            // Вычисляем значение Z для целевой точки с помощью линейной интерполяции
+            double Ztarget = LinearInterpolateZ(point1, point2, targetPoint);
+
+
+            Draw.сreatePoint(new Point3d(targetPoint.X, targetPoint.Y, Ztarget), "Высоты_Makarov.D"); ;
+            Draw.deleteObject(objID);
+
+            Text.creatText("Высоты_Makarov.D", new Point2d(targetPoint.X, targetPoint.Y), (Math.Round (Ztarget,2)).ToString(), "1", 256,0);
+
+
+            // Выводим результат
+            MyOpenDocument.ed.WriteMessage($"\nЗначение Z в целевой точке ({targetPoint.X}, {targetPoint.Y}): {Ztarget}");
+        }
+
+        // Метод для линейной интерполяции
+        public double LinearInterpolateZ(Point3d point1, Point3d point2, Point3d targetPoint)
+        {
+            double X1 = point1.X, Y1 = point1.Y, Z1 = point1.Z;
+            double X2 = point2.X, Y2 = point2.Y, Z2 = point2.Z;
+
+            // Вычисляем полное расстояние между двумя точками
+           // double dTotal = new Point3d(X1, Y1, 0).DistanceTo(new Point3d(X2,Y2,0));
+            double dTotal = point1.DistanceTo(point2);
+
+            //ТУТ НАДО БЕЗ Z Иначе типо неправильно считает, хотя правильно
+            // Вычисляем расстояние от первой точки до целевой точки
+            //double dTarget = new Point3d(X1, Y1, 0).DistanceTo(new Point3d(targetPoint.X, targetPoint.Y, 0));
+            double dTarget = point1.DistanceTo(targetPoint);
+
+            // Линейная интерполяция
+            double Ztarget = Z1 + (dTarget / dTotal) * (Z2 - Z1);
+                        
+            return Ztarget;
+        }
+
 
 
         private ItemElement getMext(IsCheck Is)
@@ -457,7 +674,7 @@ namespace ent
             List<ObjectId> tempObjectID = new List<ObjectId>();
 
 
-            PromptSelectionResult acSSPrompt = ed.GetSelection();
+            PromptSelectionResult acSSPrompt = MyOpenDocument.ed.GetSelection();
 
             if (acSSPrompt.Status == PromptStatus.OK)
             {
@@ -467,7 +684,7 @@ namespace ent
                 {
                     if (acSSObj != null)
                     {
-                        using (Transaction trAdding = dbCurrent.TransactionManager.StartTransaction())
+                        using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                         {
                             ObjectId objId = acSSObj.ObjectId;
                             Entity entity = trAdding.GetObject(objId, OpenMode.ForRead) as Entity;
@@ -496,7 +713,7 @@ namespace ent
                                     {
                                         trAdding.Commit();
                                         ZoomToEntity(objId, 10);
-                                        ed.WriteMessage("\n\n Ты где-то ошибся, есть нечисловой текст \n Перепроверь, я тут подожду.");
+                                        MyOpenDocument.ed.WriteMessage("\n\n Ты где-то ошибся, есть нечисловой текст \n Перепроверь, я тут подожду.");
                                         return null;
                                     }
                                 }
@@ -528,7 +745,7 @@ namespace ent
             List<ObjectId> tempObjectID = new List<ObjectId>();
 
 
-            PromptSelectionResult acSSPrompt = ed.GetSelection();
+            PromptSelectionResult acSSPrompt = MyOpenDocument.ed.GetSelection();
 
             if (acSSPrompt.Status == PromptStatus.OK)
             {
@@ -538,7 +755,7 @@ namespace ent
                 {
                     if (acSSObj != null)
                     {
-                        using (Transaction trAdding = dbCurrent.TransactionManager.StartTransaction())
+                        using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                         {
                             ObjectId objId = acSSObj.ObjectId;
                             Entity entity = trAdding.GetObject(objId, OpenMode.ForRead) as Entity;
@@ -581,7 +798,7 @@ namespace ent
             List<ObjectId> tempObjectID = new List<ObjectId>();
 
 
-            PromptSelectionResult acSSPrompt = ed.GetSelection();
+            PromptSelectionResult acSSPrompt = MyOpenDocument.ed.GetSelection();
 
             if (acSSPrompt.Status == PromptStatus.OK)
             {
@@ -593,7 +810,7 @@ namespace ent
                     {
 
 
-                        using (Transaction trAdding = dbCurrent.TransactionManager.StartTransaction())
+                        using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                         {
                             ObjectId objId = acSSObj.ObjectId;
 
@@ -655,7 +872,7 @@ namespace ent
                                     {
                                         trAdding.Commit();
                                         ZoomToEntity(objId, 10);
-                                        ed.WriteMessage("\n\n Ты где-то ошибся, есть нечисловой текст \n Перепроверь, я тут подожду.");
+                                        MyOpenDocument.ed.WriteMessage("\n\n Ты где-то ошибся, есть нечисловой текст \n Перепроверь, я тут подожду.");
                                         return null;
                                     }
 
@@ -680,7 +897,7 @@ namespace ent
                                     }
                                     else
                                     {
-                                        ed.WriteMessage("Невозможно преобразовать строку в число.");
+                                        MyOpenDocument.ed.WriteMessage("Невозможно преобразовать строку в число.");
                                     }
 
                                     resultItem.result = resultItem.result + temp;
@@ -724,15 +941,15 @@ namespace ent
             }
             options.Keywords.Default = listOptions[defaultOptions - 1]; // если сам, то -1
 
-            PromptResult result = ed.GetKeywords(options);
+            PromptResult result = MyOpenDocument.ed.GetKeywords(options);
             if (result.Status == PromptStatus.OK)
             {
-                ed.WriteMessage("Вы выбрали : " + result.StringResult);
+                MyOpenDocument.ed.WriteMessage("Вы выбрали : " + result.StringResult);
 
             }
             else
             {
-                ed.WriteMessage("\n\nОтмена.\n");
+                MyOpenDocument.ed.WriteMessage("\n\nОтмена.\n");
                 return null;
             }
 
@@ -746,7 +963,7 @@ namespace ent
         public void UpdateTextById(ObjectId textId, string newText, int colorIndex)
         {
 
-            using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+            using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
             {
                 try
                 {
@@ -766,7 +983,7 @@ namespace ent
                     else
                     {
                         // Обработка случая, если не удалось получить объект MText
-                        ed.WriteMessage("Unable to open MText with ObjectId: {0}\n", textId);
+                        MyOpenDocument.ed.WriteMessage("Unable to open MText with ObjectId: {0}\n", textId);
                     }
                 }
 
@@ -784,12 +1001,12 @@ namespace ent
         {
             try
             {
-                ed.SetImpliedSelection(objectIds.ToArray());
+                MyOpenDocument.ed.SetImpliedSelection(objectIds.ToArray());
             }
 
             catch (Exception ex)
             {
-                ed.WriteMessage("Я думаю, скорее всего надо сделать восстановление по Handel.");
+                MyOpenDocument.ed.WriteMessage("Я думаю, скорее всего надо сделать восстановление по Handel.");
                 return;
             }
         }
@@ -803,10 +1020,10 @@ namespace ent
 
 
 
-            using (DocumentLock doclock = doc.LockDocument())
+            using (DocumentLock doclock = MyOpenDocument.doc.LockDocument())
             {
 
-                using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
+                using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                 {
                     Entity entity = tr.GetObject(entityId, OpenMode.ForRead) as Entity;
 
@@ -827,9 +1044,9 @@ namespace ent
                             view.Width = (maxPoint.X - minPoint.X) * zoomPercent;
 
                             // Установка представления текущим
-                            ed.SetImpliedSelection(new ObjectId[] { entityId });
-                            ed.SetCurrentView(view);
-                            ed.CurrentUserCoordinateSystem = Matrix3d.Identity;
+                            MyOpenDocument.ed.SetImpliedSelection(new ObjectId[] { entityId });
+                            MyOpenDocument.ed.SetCurrentView(view);
+                            MyOpenDocument.ed.CurrentUserCoordinateSystem = Matrix3d.Identity;
                         }
                     }
 
@@ -839,85 +1056,22 @@ namespace ent
         }
 
 
-
-        [CommandMethod("ListVisibleLayers")]
-        public void DisplayVisibleLayersInViewport()
-        {
-
-
-            using (Transaction tr = dbCurrent.TransactionManager.StartTransaction())
-            {
-                // Определяем текущее пространство
-                Layout currentLayout = null; // Инициализируем переменную текущего макета
-                LayoutManager layoutManager = LayoutManager.Current;
-                if (layoutManager != null)
-                {
-                    ObjectId currentLayoutId = layoutManager.GetLayoutId(layoutManager.CurrentLayout); // Получаем идентификатор текущего макета
-                    if (!currentLayoutId.IsNull)
-                    {
-                        currentLayout = tr.GetObject(currentLayoutId, OpenMode.ForRead) as Layout; // Получаем сам объект макета
-                    }
-                }
-
-                // Проверяем, что объект текущего макета успешно получен
-                if (currentLayout != null)
-                {
-                    // Получаем имя текущего макета
-                    string currentSpace = currentLayout.LayoutName;
-
-                    // Создаем список для хранения имен видимых слоев
-                    HashSet<string> visibleLayers = new HashSet<string>();
-
-                    // Начинаем транзакцию
-
-                    // Открываем пространство модели
-                    BlockTable bt = (BlockTable)tr.GetObject(dbCurrent.BlockTableId, OpenMode.ForRead);
-                    BlockTableRecord btr = (BlockTableRecord)tr.GetObject(bt[currentSpace], OpenMode.ForRead);
-
-                    // Проходимся по всем объектам в пространстве модели
-                    foreach (ObjectId objId in btr)
-                    {
-                        Entity ent = tr.GetObject(objId, OpenMode.ForRead) as Entity;
-                        if (ent != null)
-                        {
-                            // Получаем имя слоя объекта и добавляем его в список видимых слоев
-                            string layerName = ent.Layer;
-                            visibleLayers.Add(layerName);
-                        }
-                    }
-
-                    // Завершаем транзакцию
-                    tr.Commit();
-
-
-                    // Выводим имена видимых слоев в консоль
-                    foreach (string layerName in visibleLayers)
-                    {
-                        ed.WriteMessage(layerName + "\n");
-                    }
-                }
-                else
-                {
-                    // Обработка ситуации, когда не удалось получить текущий макет
-                    // Например, выведем сообщение об ошибке
-                    ed.WriteMessage("Не удалось получить текущий макет.");
-                }
-            }
-
-        }
 
 
         public EntMtextOrDimToSumOrCount()
         {
 
-            this.ed = Application.DocumentManager.MdiActiveDocument.Editor;
-            this._tools = new Serialize(doc, dbCurrent, ed);
-            ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2024г.");
-            ed.WriteMessage("\n");
-            ed.WriteMessage("| йф - Сама считалка.");
-            ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
-            ed.WriteMessage("| йффф - Восстановление набора по ObjectID. ТОЛЬКО ДЛЯ ТЕКУЩЕГО СЕАНСА. Восстаналивает быстро.");
-            ed.WriteMessage("\n");
+            MyOpenDocument.ed = Application.DocumentManager.MdiActiveDocument.Editor;
+            MyOpenDocument.doc = Application.DocumentManager.MdiActiveDocument;
+            MyOpenDocument.dbCurrent = Application.DocumentManager.MdiActiveDocument.Database;
+
+            this._tools = new Serialize(MyOpenDocument.doc, MyOpenDocument.dbCurrent, MyOpenDocument.ed);
+            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2024г.");
+            MyOpenDocument.ed.WriteMessage("\n");
+            MyOpenDocument.ed.WriteMessage("| йф - Сама считалка.");
+            MyOpenDocument.ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
+            MyOpenDocument.ed.WriteMessage("| йффф - Восстановление набора по ObjectID. ТОЛЬКО ДЛЯ ТЕКУЩЕГО СЕАНСА. Восстаналивает быстро.");
+            MyOpenDocument.ed.WriteMessage("\n");
 
         }
 

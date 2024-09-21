@@ -32,7 +32,7 @@
     <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
-    <DefineConstants>TRACE;DEBUG;nanoCAD</DefineConstants>
+    <DefineConstants>TRACE;DEBUG;nanoCAD2</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="AcCoreMgd">
@@ -68,9 +68,13 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Draw.cs" />
+    <Compile Include="Text.cs" />
+    <Compile Include="Layer.cs" />
     <Compile Include="IsCheck.cs" />
     <Compile Include="ItemElement.cs" />
     <Compile Include="EntMtextOrDimToSumOrCount.cs" />
+    <Compile Include="MyOpenDocument.cs.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Serialize.cs" />
   </ItemGroup>
