@@ -13,6 +13,11 @@ using EntMtextOrDimToSumOrCount;
 
 
 
+
+
+
+
+
 #if nanoCAD
 using Application = HostMgd.ApplicationServices.Application;
 using HostMgd.ApplicationServices;
@@ -21,7 +26,7 @@ using HostMgd.EditorInput;
 using Teigha.Geometry;
 using Teigha.Runtime;
 using Exception = Teigha.Runtime.Exception;
-
+using DocumentLock = HostMgd.ApplicationServices.DocumentLock;
 #else
 using Application = Autodesk.AutoCAD.ApplicationServices.Application;
 using Autodesk.AutoCAD.ApplicationServices;
@@ -580,36 +585,55 @@ namespace ent
                      CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocadw
         public void FindZBetweenTwoPoints()
         {
-            // Запрашиваем у пользователя ввод первой точки
-            PromptPointOptions ppo1 = new PromptPointOptions("\nУкажите первую точку:");
-            PromptPointResult ppr1 = MyOpenDocument.ed.GetPoint(ppo1);
 
-            if (ppr1.Status != PromptStatus.OK)
+            // Сохраняем текущее состояние привязок
+            object currentOsnapModes = Application.GetSystemVariable("OSMODE");
+
+
+            try
             {
-                MyOpenDocument.ed.WriteMessage("\nПервая точка не была выбрана.");
-                return;
-            }
+                // Устанавливаем привязку "К узлу" (Node Snap). В AutoCAD она имеет значение 8
+                Application.SetSystemVariable("OSMODE", 8);
 
-            Point3d point1 = ppr1.Value;
+                MyOpenDocument.ed.WriteMessage("\nПривязка к узлу включена. Выполните необходимые действия.");
 
-            // Запрашиваем у пользователя ввод второй точки
-            PromptPointOptions ppo2 = new PromptPointOptions("\nУкажите вторую точку:");
-            PromptPointResult ppr2 = MyOpenDocument.ed.GetPoint(ppo2);
 
-            if (ppr2.Status != PromptStatus.OK)
-            {
-                MyOpenDocument.ed.WriteMessage("\nВторая точка не была выбрана.");
-                return;
-            }
 
-            Point3d point2 = ppr2.Value;
 
-            /*
-            List<Point2d> listPoints = new List<Point2d>();
-            listPoints.Add(new Point2d(point1.X, point1.Y));
-            listPoints.Add(new Point2d(point2.X, point2.Y));*/
 
-            List<Point3d> listPoints = new List<Point3d>();
+                // Запрашиваем у пользователя ввод первой точки
+                PromptPointOptions ppo1 = new PromptPointOptions("\nУкажите первую точку:");
+                PromptPointResult ppr1 = MyOpenDocument.ed.GetPoint(ppo1);
+
+                if (ppr1.Status != PromptStatus.OK)
+                {
+                    MyOpenDocument.ed.WriteMessage("\nПервая точка не была выбрана.");
+                    return;
+                }
+
+                Point3d point1 = ppr1.Value;
+
+                // Запрашиваем у пользователя ввод второй точки
+                PromptPointOptions ppo2 = new PromptPointOptions("\nУкажите вторую точку:");
+                PromptPointResult ppr2 = MyOpenDocument.ed.GetPoint(ppo2);
+
+                if (ppr2.Status != PromptStatus.OK)
+                {
+                    MyOpenDocument.ed.WriteMessage("\nВторая точка не была выбрана.");
+                    return;
+                }
+
+                Point3d point2 = ppr2.Value;
+
+                //Восстанавлтиваем привязки
+                Application.SetSystemVariable("OSMODE", currentOsnapModes);
+
+
+                /*List<Point2d> listPoints = new List<Point2d>();
+                listPoints.Add(new Point2d(point1.X, point1.Y));
+                listPoints.Add(new Point2d(point2.X, point2.Y));*/
+
+                List<Point3d> listPoints = new List<Point3d>();
 
             listPoints.Add(point1);
             listPoints.Add(point2);
@@ -642,6 +666,14 @@ namespace ent
 
             // Выводим результат
             MyOpenDocument.ed.WriteMessage($"\nЗначение Z в целевой точке ({targetPoint.X}, {targetPoint.Y}): {Ztarget}");
+
+            }
+            finally
+            {     // Восстанавливаем предыдущие привязки
+                Application.SetSystemVariable("OSMODE", currentOsnapModes);
+                MyOpenDocument.ed.WriteMessage("\nВсе привязки восстановлены.");
+            }
+
         }
 
         // Метод для линейной интерполяции
@@ -651,23 +683,27 @@ namespace ent
             double X2 = point2.X, Y2 = point2.Y, Z2 = point2.Z;
 
             // Вычисляем полное расстояние между двумя точками
-           // double dTotal = new Point3d(X1, Y1, 0).DistanceTo(new Point3d(X2,Y2,0));
-            double dTotal = point1.DistanceTo(point2);
+            double dTotal = new Point3d(X1, Y1, 0).DistanceTo(new Point3d(X2,Y2,0));
+
+           // double dTotal = point1.DistanceTo(point2);
 
             //ТУТ НАДО БЕЗ Z Иначе типо неправильно считает, хотя правильно
             // Вычисляем расстояние от первой точки до целевой точки
-            //double dTarget = new Point3d(X1, Y1, 0).DistanceTo(new Point3d(targetPoint.X, targetPoint.Y, 0));
-            double dTarget = point1.DistanceTo(targetPoint);
+            double dTarget = new Point3d(X1, Y1, 0).DistanceTo(new Point3d(targetPoint.X, targetPoint.Y, 0));
 
             // Линейная интерполяция
             double Ztarget = Z1 + (dTarget / dTotal) * (Z2 - Z1);
+           // MyOpenDocument.ed.WriteMessage("Z1 " +Z1+ " dTarget "+ dTarget+ " dTotal " + dTotal + " Z2 "+Z2+ " Z1 "+ Z1 + "      "+Ztarget);
                         
             return Ztarget;
         }
 
 
+        
 
-        private ItemElement getMext(IsCheck Is)
+
+
+            private ItemElement getMext(IsCheck Is)
         {
             ItemElement resultItem = new ItemElement();
             List<Handle> tempListHandle = new List<Handle>();
@@ -1071,6 +1107,9 @@ namespace ent
             MyOpenDocument.ed.WriteMessage("| йф - Сама считалка.");
             MyOpenDocument.ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
             MyOpenDocument.ed.WriteMessage("| йффф - Восстановление набора по ObjectID. ТОЛЬКО ДЛЯ ТЕКУЩЕГО СЕАНСА. Восстаналивает быстро.");
+            MyOpenDocument.ed.WriteMessage("| цф - Расворачивает профил линии в прямую с высотами.");
+            MyOpenDocument.ed.WriteMessage("| цфф - Построить точку выстоной отметки интерполяцией имея две точки.");
+            MyOpenDocument.ed.WriteMessage("| йц - Скрытие фона у mTexta и Выносок");
             MyOpenDocument.ed.WriteMessage("\n");
 
         }

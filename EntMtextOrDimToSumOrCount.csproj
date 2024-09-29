@@ -32,7 +32,7 @@
     <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
-    <DefineConstants>TRACE;DEBUG;nanoCAD2</DefineConstants>
+    <DefineConstants>TRACE;DEBUG;nanoCAD</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="AcCoreMgd">
