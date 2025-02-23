@@ -262,8 +262,8 @@ namespace ent
 
         }
 
-        [CommandMethod("йффф", CommandFlags.UsePickSet |
-                      CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocad
+      //  [CommandMethod("йффф", CommandFlags.UsePickSet |
+      //                CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocad
         public void inDataSummObjId()
 
         {
@@ -469,117 +469,7 @@ namespace ent
 
         }
 
-        //По 4 точкам в пространстве 
-        [CommandMethod("цффф", CommandFlags.UsePickSet |
-                     CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocadw
-        public void FindZValue()
-        {
-
-            MyOpenDocument.ed.WriteMessage("Билинейная интерполяция.Она учитывает изменения по обеим осям. Надо выбрать 4 точки в пространстве");
-            // Начало транзакции
-            using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
-            {
-
-                // Запрашиваем у пользователя ввод точки
-                PromptPointOptions ppo1 = new PromptPointOptions("\nУкажите местоположение точки (Верхний левый):");
-                PromptPointResult ppr1 = MyOpenDocument.ed.GetPoint(ppo1);
-
-                if (ppr1.Status != PromptStatus.OK)
-                {
-                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
-                    return;
-                }
-
-                // Запрашиваем у пользователя ввод точки
-                PromptPointOptions ppo2 = new PromptPointOptions("\nУкажите местоположение точки (Верхний правый):");
-                PromptPointResult ppr2 = MyOpenDocument.ed.GetPoint(ppo2);
-
-                if (ppr2.Status != PromptStatus.OK)
-                {
-                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
-                    return;
-                }
-
-                // Запрашиваем у пользователя ввод точки
-                PromptPointOptions ppo3 = new PromptPointOptions("\nУкажите местоположение точки (Нижний левый):");
-                PromptPointResult ppr3 = MyOpenDocument.ed.GetPoint(ppo3);
-
-                if (ppr3.Status != PromptStatus.OK)
-                {
-                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
-                    return;
-                }
-
-                // Запрашиваем у пользователя ввод точки
-                PromptPointOptions ppo4 = new PromptPointOptions("\nУкажите местоположение точки (Нижний правый):");
-                PromptPointResult ppr4 = MyOpenDocument.ed.GetPoint(ppo4);
-
-                if (ppr4.Status != PromptStatus.OK)
-                {
-                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
-                    return;
-                }
-
-
-                // Запрашиваем у пользователя ввод точки
-                PromptPointOptions ppo = new PromptPointOptions("\nУкажите местоположение точки:");
-                PromptPointResult ppr = MyOpenDocument.ed.GetPoint(ppo);
-
-                if (ppr.Status != PromptStatus.OK)
-                {
-                    MyOpenDocument.ed.WriteMessage("\nТочка не была выбрана.");
-                    return;
-                }
-
-                // Получаем координаты точки, которую указал пользователь
-                Point3d targetPoint = ppr.Value;
-                double Xtarget = targetPoint.X;
-                double Ytarget = targetPoint.Y;
-                MyOpenDocument.ed.WriteMessage("\n" + targetPoint.X + " " + targetPoint.Y + " " + targetPoint.Z);
-
-                // Определяем четыре известные точки (с известными Z)
-                Point3d p1 = ppr1.Value; // Верхний левый
-                Point3d p2 = ppr2.Value; // Верхний правый
-                Point3d p3 = ppr3.Value; // Нижний левый
-                Point3d p4 = ppr4.Value; // Нижний правый
-
-                // Проверяем, что точка находится в пределах прямоугольника
-                if (Xtarget >= p1.X && Xtarget <= p2.X && Ytarget >= p1.Y && Ytarget <= p3.Y)
-                {
-                    // Выполняем билинейную интерполяцию для нахождения значения Z
-                    double Ztarget = BilinearInterpolateZ(p1, p2, p3, p4, Xtarget, Ytarget);
-
-                    // Выводим значение Z в командное окно
-                    MyOpenDocument.ed.WriteMessage($"\nЗначение Z в указанной точке ({Xtarget}, {Ytarget}): {Ztarget}");
-                }
-                else
-                {
-                    MyOpenDocument.ed.WriteMessage("\nТочка выходит за пределы области интерполяции.");
-                }
-
-                // Завершаем транзакцию
-                tr.Commit();
-            }
-        }
-
-        // Метод для билинейной интерполяции
-        public double BilinearInterpolateZ(Point3d p1, Point3d p2, Point3d p3, Point3d p4, double Xtarget, double Ytarget)
-        {
-            double X1 = p1.X, Y1 = p1.Y, Z1 = p1.Z; // Точка 1 (верхний левый)
-            double X2 = p2.X, Y2 = p2.Y, Z2 = p2.Z; // Точка 2 (верхний правый)
-            double X3 = p3.X, Y3 = p3.Y, Z3 = p3.Z; // Точка 3 (нижний левый)
-            double X4 = p4.X, Y4 = p4.Y, Z4 = p4.Z; // Точка 4 (нижний правый)
-
-            // Билинейная интерполяция
-            double Ztarget =
-                Z1 * ((X2 - Xtarget) * (Y3 - Ytarget)) / ((X2 - X1) * (Y3 - Y1)) +
-                Z2 * ((Xtarget - X1) * (Y3 - Ytarget)) / ((X2 - X1) * (Y3 - Y1)) +
-                Z3 * ((X2 - Xtarget) * (Ytarget - Y1)) / ((X2 - X1) * (Y3 - Y1)) +
-                Z4 * ((Xtarget - X1) * (Ytarget - Y1)) / ((X2 - X1) * (Y3 - Y1));
-
-            return Ztarget;
-        }
-
+        
 
         [CommandMethod("цфф", CommandFlags.UsePickSet |
                      CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocadw
@@ -699,7 +589,187 @@ namespace ent
         }
 
 
+        private ItemElement GetDimension(IsCheck isCheck)
+        {
+            ItemElement resultItem = new ItemElement();
+            List<Handle> tempListHandle = new List<Handle>();
+            List<ObjectId> tempObjectID = new List<ObjectId>();
 
+            PromptSelectionResult acSSPrompt = MyOpenDocument.ed.GetSelection();
+
+            if (acSSPrompt.Status == PromptStatus.OK)
+            {
+                SelectionSet acSSet = acSSPrompt.Value;
+
+                foreach (SelectedObject acSSObj in acSSet)
+                {
+                    if (acSSObj != null)
+                    {
+                        using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+                        {
+                            ObjectId objId = acSSObj.ObjectId;
+
+                            // Проверка на dim
+                            if (trAdding.GetObject(objId, OpenMode.ForRead) is Dimension entity)
+                            {
+                                tempListHandle.Add(entity.ObjectId.Handle);
+                                tempObjectID.Add(entity.ObjectId);
+
+                                bool isHandresultMeasurement = string.IsNullOrEmpty(entity.DimensionText); // Если вручную текст вбит
+
+                                if (!isHandresultMeasurement)
+                                {
+                                    double doleValue = 0;
+                                    bool isAdd = double.TryParse(entity.DimensionText.Trim().Replace(",", "."), out doleValue);
+
+                                    if (isAdd) // Проверка, можно ли преобразовать в число
+                                    {
+                                        resultItem.ObjSelID.Add(objId);
+                                        resultItem.result += doleValue;
+                                    }
+                                    else
+                                    {
+                                        trAdding.Commit();
+                                        ZoomToEntity(objId, 10);
+                                        MyOpenDocument.ed.WriteMessage("\n\n Ты где-то ошибся, есть нечисловой текст \n Перепроверь, я тут подожду.");
+                                        return null; // Здесь всё нормально, возврат null при ошибке
+                                    }
+                                }
+                                else
+                                {
+                                    double resultMeasurement = Math.Round(entity.Measurement, entity.Dimdec); // Измеренное значение с округлением
+                                    resultItem.result += resultMeasurement;
+                                }
+
+                                trAdding.Commit();
+                            }
+                        }
+                    }
+                }
+
+                resultItem.AllHandel = tempListHandle;
+                resultItem.AllObjectID = new List<ObjectId>(tempObjectID);
+
+                if (isCheck == IsCheck.count)
+                {
+                    resultItem.result = resultItem.AllHandel.Count();
+                }
+                else if (isCheck == IsCheck.ave && resultItem.AllHandel.Count > 0) // Добавлена проверка на ноль
+                {
+                    resultItem.result /= resultItem.AllHandel.Count();
+                }
+            }
+
+            return resultItem; // Возврат по умолчанию вне условия
+        }
+
+
+        [CommandMethod("цффф")]
+        public void AddDimensionsToPolyline()
+        {
+            Document doc = MyOpenDocument.doc;
+            Database db = MyOpenDocument.dbCurrent;
+            Editor ed = MyOpenDocument.ed;
+
+            // Запрос выбора полилинии
+            PromptEntityOptions peo = new PromptEntityOptions("\nВыберите полилинию: ");
+
+            //отступ от сегмента
+
+            PromptDoubleOptions pio = new PromptDoubleOptions("\n Укажите отступ размера от сегмента");
+            pio.AllowNegative = false;
+            pio.DefaultValue = 0.25;
+
+            PromptDoubleResult pir = ed.GetDouble(pio);
+            if (pir.Status != PromptStatus.OK)
+            {
+                ed.WriteMessage("\nВвод отменён.");
+                return;
+            }
+            double offsetText= pir.Value;
+
+
+
+
+            peo.SetRejectMessage("\nВыбранный объект не является полилинией.");
+            peo.AddAllowedClass(typeof(Polyline), true);
+
+            PromptEntityResult per = ed.GetEntity(peo);
+            if (per.Status != PromptStatus.OK)
+            {
+                ed.WriteMessage("\nВыбор отменён.");
+                return;
+            }
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                // Открываем полилинию для чтения
+                Polyline pline = tr.GetObject(per.ObjectId, OpenMode.ForRead) as Polyline;
+                if (pline == null)
+                {
+                    ed.WriteMessage("\nНе удалось получить полилинию.");
+                    return;
+                }
+
+                // Получаем пространство модели для добавления размеров
+                BlockTable bt = tr.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
+                BlockTableRecord btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+
+                // Проходим по всем сегментам полилинии
+                for (int i = 0; i < pline.NumberOfVertices - 1; i++)
+                {
+                    Point3d startPoint = pline.GetPoint3dAt(i);
+                    Point3d endPoint = pline.GetPoint3dAt(i + 1);
+
+                    // Создаём линейный размер
+                    using (AlignedDimension dim = new AlignedDimension())
+                    {
+                        dim.XLine1Point = startPoint; // Начальная точка сегмента
+                        dim.XLine2Point = endPoint;   // Конечная точка сегмента
+                        dim.DimLinePoint = CalculateDimLinePoint(startPoint, endPoint, offsetText); // Позиция размерной линии
+                        dim.DimensionStyle = db.Dimstyle; // Используем текущий стиль размера
+
+                        // Добавляем размер в пространство модели
+                        btr.AppendEntity(dim);
+                        tr.AddNewlyCreatedDBObject(dim, true);
+                    }
+                }
+
+                // Если полилиния замкнута, добавляем размер для последнего сегмента
+                if (pline.Closed)
+                {
+                    Point3d startPoint = pline.GetPoint3dAt(pline.NumberOfVertices - 1);
+                    Point3d endPoint = pline.GetPoint3dAt(0);
+
+                    using (AlignedDimension dim = new AlignedDimension())
+                    {
+                        dim.XLine1Point = startPoint;
+                        dim.XLine2Point = endPoint;
+                        dim.DimLinePoint = CalculateDimLinePoint(startPoint, endPoint, offsetText);
+                        dim.DimensionStyle = db.Dimstyle;
+
+                        btr.AppendEntity(dim);
+                        tr.AddNewlyCreatedDBObject(dim, true);
+                    }
+                }
+
+                tr.Commit();
+            }
+
+            ed.WriteMessage("\nРазмеры успешно добавлены.");
+        }
+
+        // Вспомогательный метод для вычисления позиции размерной линии
+        private Point3d CalculateDimLinePoint(Point3d start, Point3d end,double offset)
+        {
+            Vector3d direction = end - start;
+            Vector3d perpendicular = direction.GetPerpendicularVector().Negate(); // Перпендикулярное направление
+            //double offset = 0.25; // Смещение размерной линии (можно настроить)
+
+            // Средняя точка сегмента + смещение вверх/вниз
+            Point3d midPoint = start + (direction * 0.5);
+            return midPoint + (perpendicular * offset);
+        }
 
 
 
@@ -887,9 +957,6 @@ namespace ent
                                     resultItem.result = resultItem.result + resultMeasurement;
                                 }
 
-
-
-
                                 trAdding.Commit();
                             }
                         }
@@ -914,7 +981,90 @@ namespace ent
                 return resultItem;
             
         }
-    
+
+        [CommandMethod("цфффф")]
+        public void RoundPolylineSegments()
+        {
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Database db = doc.Database;
+            Editor ed = doc.Editor;
+
+            // Запрос выбора полилинии
+            PromptEntityOptions peo = new PromptEntityOptions("\nВыберите полилинию: ");
+            peo.SetRejectMessage("\nВыбранный объект не является полилинией.");
+            peo.AddAllowedClass(typeof(Polyline), true);
+
+            PromptEntityResult per = ed.GetEntity(peo);
+            if (per.Status != PromptStatus.OK)
+            {
+                ed.WriteMessage("\nВыбор отменён.");
+                return;
+            }
+
+            // Запрос количества знаков для округления
+            PromptIntegerOptions pio = new PromptIntegerOptions("\nУкажите количество знаков после запятой (0-8): ");
+            pio.AllowNegative = false;
+            pio.DefaultValue = 0;
+            pio.LowerLimit = 0;
+            pio.UpperLimit = 8;
+
+            PromptIntegerResult pir = ed.GetInteger(pio);
+            if (pir.Status != PromptStatus.OK)
+            {
+                ed.WriteMessage("\nВвод отменён.");
+                return;
+            }
+            int decimals = pir.Value;
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                // Открываем полилинию для записи
+                Polyline pline = tr.GetObject(per.ObjectId, OpenMode.ForWrite) as Polyline;
+                if (pline == null)
+                {
+                    ed.WriteMessage("\nНе удалось получить полилинию.");
+                    return;
+                }
+
+                // Если полилиния замкнута, временно открываем её для обработки
+                bool wasClosed = pline.Closed;
+                if (wasClosed)
+                {
+                    pline.Closed = false;
+                }
+
+                // Изменяем длины сегментов, двигая вершины
+                for (int i = 0; i < pline.NumberOfVertices - 1; i++)
+                {
+                    Point3d startPoint = pline.GetPoint3dAt(i);
+                    Point3d endPoint = pline.GetPoint3dAt(i + 1);
+
+                    // Вычисляем текущую длину сегмента
+                    double currentLength = startPoint.DistanceTo(endPoint);
+                    double roundedLength = Math.Round(currentLength, decimals);
+
+                    // Вычисляем направление сегмента
+                    Vector3d direction = (endPoint - startPoint).GetNormal();
+
+                    // Новая позиция конечной точки сегмента
+                    Point3d newEndPoint = startPoint + direction * roundedLength;
+
+                    // Обновляем координаты следующей вершины
+                    pline.SetPointAt(i + 1, new Point2d(newEndPoint.X, newEndPoint.Y));
+                }
+
+                // Восстанавливаем состояние замкнутости
+                if (wasClosed)
+                {
+                    pline.Closed = true;
+                }
+
+                tr.Commit();
+            }
+
+            ed.WriteMessage($"\nДлины сегментов полилинии округлены до {decimals} знаков после запятой.");
+        }
+
 
 
 
@@ -1055,14 +1205,16 @@ namespace ent
             MyOpenDocument.dbCurrent = Application.DocumentManager.MdiActiveDocument.Database;
 
             this._tools = new Serialize(MyOpenDocument.doc, MyOpenDocument.dbCurrent, MyOpenDocument.ed);
-            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г.");
+            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г. | ver. 1.3");
             MyOpenDocument.ed.WriteMessage("\n");
             MyOpenDocument.ed.WriteMessage("| йф - Сама считалка.");
             MyOpenDocument.ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
-            MyOpenDocument.ed.WriteMessage("| йффф - Восстановление набора по ObjectID. ТОЛЬКО ДЛЯ ТЕКУЩЕГО СЕАНСА. Восстаналивает быстро.");
+          //  MyOpenDocument.ed.WriteMessage("| йффф - Восстановление набора по ObjectID. ТОЛЬКО ДЛЯ ТЕКУЩЕГО СЕАНСА. Восстаналивает быстро.");
             MyOpenDocument.ed.WriteMessage("| цф - Расворачивает профил линии в прямую с высотами.");
             MyOpenDocument.ed.WriteMessage("| цфф - Построить точку выстоной отметки интерполяцией имея две точки.");
-            MyOpenDocument.ed.WriteMessage("| йц - Скрытие фона у mTexta и Выносок");
+            MyOpenDocument.ed.WriteMessage("| цффф - Построить размеры над полиллинией.");
+            MyOpenDocument.ed.WriteMessage("| цфффф - Округлить сегменты полиллинии.");
+            //MyOpenDocument.ed.WriteMessage("| йц - Скрытие фона у mTexta и Выносок");
             MyOpenDocument.ed.WriteMessage("\n");
 
         }
