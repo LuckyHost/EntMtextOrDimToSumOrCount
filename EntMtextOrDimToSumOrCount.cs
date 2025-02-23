@@ -1210,7 +1210,7 @@ namespace ent
             MyOpenDocument.ed.WriteMessage("| йф - Сама считалка.");
             MyOpenDocument.ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
           //  MyOpenDocument.ed.WriteMessage("| йффф - Восстановление набора по ObjectID. ТОЛЬКО ДЛЯ ТЕКУЩЕГО СЕАНСА. Восстаналивает быстро.");
-            MyOpenDocument.ed.WriteMessage("| цф - Расворачивает профил линии в прямую с высотами.");
+            MyOpenDocument.ed.WriteMessage("| цф - Разворачивает профиль линии в прямую с высотами.");
             MyOpenDocument.ed.WriteMessage("| цфф - Построить точку выстоной отметки интерполяцией имея две точки.");
             MyOpenDocument.ed.WriteMessage("| цффф - Построить размеры над полиллинией.");
             MyOpenDocument.ed.WriteMessage("| цфффф - Округлить сегменты полиллинии.");
