@@ -635,37 +635,37 @@ namespace ent
 
                 List<Point3d> listPoints = new List<Point3d>();
 
-            listPoints.Add(point1);
-            listPoints.Add(point2);
+                listPoints.Add(point1);
+                listPoints.Add(point2);
 
-            Layer.creatLayer("Высоты_Makarov.D", 179, 37, 0);
-           //ObjectId objID = Draw.drawPolyline(listPoints, "Высоты_Makarov.D", 21, 0.08);
-           ObjectId objID = Draw.DrawPolyline3d(listPoints, "Высоты_Makarov.D", 21);
+                Layer.creatLayer("Высоты_Makarov.D", 179, 37, 0);
+                //ObjectId objID = Draw.drawPolyline(listPoints, "Высоты_Makarov.D", 21, 0.08);
+                ObjectId objID = Draw.DrawPolyline3d(listPoints, "Высоты_Makarov.D", 21);
 
-            // Запрашиваем у пользователя ввод целевой точки
-            PromptPointOptions ppoTarget = new PromptPointOptions("\nУкажите целевую точку:");
-            PromptPointResult pprTarget = MyOpenDocument.ed.GetPoint(ppoTarget);
+                // Запрашиваем у пользователя ввод целевой точки
+                PromptPointOptions ppoTarget = new PromptPointOptions("\nУкажите целевую точку:");
+                PromptPointResult pprTarget = MyOpenDocument.ed.GetPoint(ppoTarget);
 
-            if (pprTarget.Status != PromptStatus.OK)
-            {
-                MyOpenDocument.ed.WriteMessage("\nЦелевая точка не была выбрана.");
-                return;
-            }
+                if (pprTarget.Status != PromptStatus.OK)
+                {
+                    MyOpenDocument.ed.WriteMessage("\nЦелевая точка не была выбрана.");
+                    return;
+                }
 
-            Point3d targetPoint = pprTarget.Value;
+                Point3d targetPoint = pprTarget.Value;
 
-            // Вычисляем значение Z для целевой точки с помощью линейной интерполяции
-            double Ztarget = LinearInterpolateZ(point1, point2, targetPoint);
-
-
-            Draw.сreatePoint(new Point3d(targetPoint.X, targetPoint.Y, Ztarget), "Высоты_Makarov.D"); ;
-            Draw.deleteObject(objID);
-
-            Text.creatText("Высоты_Makarov.D", new Point2d(targetPoint.X, targetPoint.Y), (Math.Round (Ztarget,2)).ToString(), "1", 256,0);
+                // Вычисляем значение Z для целевой точки с помощью линейной интерполяции
+                double Ztarget = LinearInterpolateZ(point1, point2, targetPoint);
 
 
-            // Выводим результат
-            MyOpenDocument.ed.WriteMessage($"\nЗначение Z в целевой точке ({targetPoint.X}, {targetPoint.Y}): {Ztarget}");
+                Draw.сreatePoint(new Point3d(targetPoint.X, targetPoint.Y, Ztarget), "Высоты_Makarov.D"); ;
+                Draw.deleteObject(objID);
+
+                Text.creatText("Высоты_Makarov.D", new Point2d(targetPoint.X, targetPoint.Y), (Math.Round(Ztarget, 2)).ToString(), "1", 256, 0);
+
+
+                // Выводим результат
+                MyOpenDocument.ed.WriteMessage($"\nЗначение Z в целевой точке ({targetPoint.X}, {targetPoint.Y}): {Ztarget}");
 
             }
             finally
@@ -683,9 +683,9 @@ namespace ent
             double X2 = point2.X, Y2 = point2.Y, Z2 = point2.Z;
 
             // Вычисляем полное расстояние между двумя точками
-            double dTotal = new Point3d(X1, Y1, 0).DistanceTo(new Point3d(X2,Y2,0));
+            double dTotal = new Point3d(X1, Y1, 0).DistanceTo(new Point3d(X2, Y2, 0));
 
-           // double dTotal = point1.DistanceTo(point2);
+            // double dTotal = point1.DistanceTo(point2);
 
             //ТУТ НАДО БЕЗ Z Иначе типо неправильно считает, хотя правильно
             // Вычисляем расстояние от первой точки до целевой точки
@@ -693,17 +693,17 @@ namespace ent
 
             // Линейная интерполяция
             double Ztarget = Z1 + (dTarget / dTotal) * (Z2 - Z1);
-           // MyOpenDocument.ed.WriteMessage("Z1 " +Z1+ " dTarget "+ dTarget+ " dTotal " + dTotal + " Z2 "+Z2+ " Z1 "+ Z1 + "      "+Ztarget);
-                        
+            // MyOpenDocument.ed.WriteMessage("Z1 " +Z1+ " dTarget "+ dTarget+ " dTotal " + dTotal + " Z2 "+Z2+ " Z1 "+ Z1 + "      "+Ztarget);
+
             return Ztarget;
         }
 
 
-        
 
 
 
-            private ItemElement getMext(IsCheck Is)
+
+        private ItemElement getMext(IsCheck Is)
         {
             ItemElement resultItem = new ItemElement();
             List<Handle> tempListHandle = new List<Handle>();
@@ -855,50 +855,19 @@ namespace ent
                             {
 
                                 Dimension entity = trAdding.GetObject(objId, OpenMode.ForRead) as Dimension;
+
                                 tempListHandle.Add(entity.ObjectId.Handle);
                                 tempObjectID.Add(entity.ObjectId);
 
-                                string resultMeasurement = entity.FormatMeasurement(entity.Measurement, "");
 
+                                bool isHandresultMeasurement = string.IsNullOrEmpty(entity.DimensionText); //если вручную текст вбит 
 
-                                if (!string.IsNullOrEmpty(entity.Prefix) | !string.IsNullOrEmpty(entity.Suffix))
+                                if (!isHandresultMeasurement)
                                 {
-                                    string Prefix = " ";
-                                    string Suffix = " ";
-
-                                    if (!string.IsNullOrEmpty(entity.Prefix))
-                                    {
-                                        Prefix = entity.Prefix;
-                                    }
-                                    if (!string.IsNullOrEmpty(entity.Suffix))
-                                    {
-                                        Suffix = entity.Suffix;
-                                    }
-
-                                    //ed.WriteMessage("DimensionText  Suff isNull ?: "+ string.IsNullOrEmpty(entity.Prefix)+" "+entity.Prefix);
-                                    // ed.WriteMessage("DimensionText isPref isNull?: "+ string.IsNullOrEmpty(entity.Suffix)+ " "+entity.Suffix);
-
-                                    resultMeasurement = resultMeasurement.Replace(Prefix, "").Replace(Suffix, "").Replace("\\A1;", "");
-
-                                }
-                                else
-                                {
-                                    resultMeasurement = entity.FormatMeasurement(entity.Measurement, "").Replace("\\A1;", "");
-
-                                }
-
-
-
-                                if (!string.IsNullOrEmpty(entity.DimensionText))
-                                {
-                                    //ed.WriteMessage("DimensionText: "+entity.DimensionText);
-                                    //ed.WriteMessage("resultMeasurement: "+resultMeasurement );
-
-
                                     double doleValue = 0;
-                                    bool isAdd = double.TryParse(entity.DimensionText.Trim().Replace(",", "."), out doleValue);
+                                    bool isAdd = double.TryParse(entity.DimensionText.Trim().Replace(".", ","), out doleValue);
 
-                                    if (isAdd)
+                                    if (isAdd) //Проверка может ли в число преобразовать. 
                                     {
                                         //Фиктивные
                                         resultItem.ObjSelID.Add(objId);
@@ -911,57 +880,41 @@ namespace ent
                                         MyOpenDocument.ed.WriteMessage("\n\n Ты где-то ошибся, есть нечисловой текст \n Перепроверь, я тут подожду.");
                                         return null;
                                     }
-
-
-
                                 }
                                 else
                                 {
-
-                                    double temp;
-
-                                    //Тут в чем то косяк в реплйсе
-
-#if nanoCAD
-                                    if (double.TryParse(resultMeasurement.Replace(".", ","), out temp))
-#else
-                                    if (double.TryParse(resultMeasurement.Replace(",", "."), out temp))
-#endif
-
-                                    {
-                                        //ed.WriteMessage("temp: "+temp );
-                                    }
-                                    else
-                                    {
-                                        MyOpenDocument.ed.WriteMessage("Невозможно преобразовать строку в число.");
-                                    }
-
-                                    resultItem.result = resultItem.result + temp;
+                                    double resultMeasurement = Math.Round(entity.Measurement, entity.Dimdec);  //Измеренное значение и учетом округления
+                                    resultItem.result = resultItem.result + resultMeasurement;
                                 }
 
 
 
-                                //resultItem.result = resultItem.result + Math.Round(entity.Measurement, entity.Dimdec);
+
+                                trAdding.Commit();
                             }
-                            trAdding.Commit();
                         }
                     }
                 }
-                resultItem.AllHandel = tempListHandle;
-                resultItem.AllObjectID = new List<ObjectId>(tempObjectID);
             }
 
-            if (Is == IsCheck.count)
-            {
-                resultItem.result = resultItem.AllHandel.Count();
-            }
+            resultItem.AllHandel = tempListHandle;
+                    resultItem.AllObjectID = new List<ObjectId>(tempObjectID);
+                
 
-            if (Is == IsCheck.ave)
-            {
-                resultItem.result = resultItem.result / resultItem.AllHandel.Count();
-            }
-            return resultItem;
+                if (Is == IsCheck.count)
+                {
+                    resultItem.result = resultItem.AllHandel.Count();
+                }
+
+                if (Is == IsCheck.ave)
+                {
+                    resultItem.result = resultItem.result / resultItem.AllHandel.Count();
+                }
+            
+                return resultItem;
+            
         }
+    
 
 
 
