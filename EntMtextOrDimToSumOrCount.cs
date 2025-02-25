@@ -142,8 +142,24 @@ namespace ent
             PromptEntityOptions item = new PromptEntityOptions("\nВыберите объект(Mtext) куда сохранить результат: ");
             PromptEntityResult perItem = MyOpenDocument.ed.GetEntity(item);
 
+            //Умножать результат на коэфицент
+            PromptDoubleOptions pio = new PromptDoubleOptions("\n Коэффициент умножения результата");
+            pio.AllowNegative = false;
+            pio.DefaultValue = 1.04;
+            pio.AllowZero = false;
+
+            PromptDoubleResult pir = MyOpenDocument.ed.GetDouble(pio);
+            if (pir.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nВвод отменён.");
+                return;
+            }
+            double offsetResult = pir.Value;
+
+
+
             //Обновляем текст в Мтекст
-            UpdateTextById(perItem.ObjectId, temp.result.ToString(), 256);
+            UpdateTextById(perItem.ObjectId, (temp.result*offsetResult).ToString(), 256);
 
             string xmlData = _tools.SerializeToXml<ItemElement>(temp);
             _tools.SaveXmlToXrecord(xmlData, perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
@@ -772,6 +788,247 @@ namespace ent
         }
 
 
+        [CommandMethod("SmartOffset")]
+        public void SmartOffset()
+        {
+            Document doc = MyOpenDocument.doc;
+            Database db = MyOpenDocument.dbCurrent;
+            Editor ed = MyOpenDocument.ed;
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                try
+                {
+                    // 1. Выбор полилинии
+                    PromptEntityOptions peo = new PromptEntityOptions("\nВыберите полилинию:");
+                    peo.SetRejectMessage("\nВыберите только полилинию!");
+                    peo.AddAllowedClass(typeof(Polyline), true);
+                    PromptEntityResult per = ed.GetEntity(peo);
+                    if (per.Status != PromptStatus.OK) return;
+
+                    // 2. Выбор направления смещения
+                    PromptKeywordOptions pko = new PromptKeywordOptions("\nВыберите направление смещения [Все/Горизонтально/Вертикально]:")
+                    {
+                        AllowArbitraryInput = false,
+                    };
+                    pko.Keywords.Add("Все", "ВСЕ", "Все стороны");
+                    pko.Keywords.Add("Горизонтально", "ГОР", "Слева и справа");
+                    pko.Keywords.Add("Вертикально", "ВЕР", "Сверху и снизу");
+                    pko.Keywords.Default = "Все";
+
+                    PromptResult pkr = ed.GetKeywords(pko);
+                    if (pkr.Status != PromptStatus.OK) return;
+
+                    // 3. Ввод значения смещения
+                    PromptDoubleOptions pdo = new PromptDoubleOptions("\nВведите величину смещения:")
+                    {
+                        AllowNegative = true,
+                        AllowZero = false
+                    };
+                    PromptDoubleResult pdr = ed.GetDouble(pdo);
+                    if (pdr.Status != PromptStatus.OK) return;
+                    double offset = pdr.Value;
+
+                    // 4. Получение полилинии
+                    Polyline pline = tr.GetObject(per.ObjectId, OpenMode.ForWrite) as Polyline;
+
+                    // 5. Применение смещения
+                    for (int i = 0; i < pline.NumberOfVertices; i++)
+                    {
+                        Point2d pt = pline.GetPoint2dAt(i);
+                        Vector2d offsetVector = GetOffsetVector(pline, i, offset, pkr.StringResult);
+                        pline.SetPointAt(i, pt + offsetVector);
+                    }
+
+                    tr.Commit();
+                    ed.Regen();
+                }
+                catch (Exception ex)
+                {
+                    ed.WriteMessage($"\nОшибка: {ex.Message}");
+                }
+            }
+        }
+
+        private Vector2d GetOffsetVector(Polyline pline, int index, double offset, string mode)
+        {
+            switch (mode.ToUpper())
+            {
+                case "ГОР": // Горизонтальное смещение
+                    return new Vector2d(offset, 0);
+
+                case "ВЕР": // Вертикальное смещение
+                    return new Vector2d(0, offset);
+
+                default: // Смещение во все стороны
+                    int prev = (index == 0) ? pline.NumberOfVertices - 1 : index - 1;
+                    int next = (index == pline.NumberOfVertices - 1) ? 0 : index + 1;
+
+                    Vector2d v1 = (pline.GetPoint2dAt(prev) - pline.GetPoint2dAt(index)).GetNormal();
+                    Vector2d v2 = (pline.GetPoint2dAt(next) - pline.GetPoint2dAt(index)).GetNormal();
+
+                    return (v1 + v2).GetNormal() * offset;
+            }
+        }
+
+        [CommandMethod("йффф")]
+        public void ExpandRectangle()
+        {
+            Document doc = MyOpenDocument.doc;
+            Database db = MyOpenDocument.dbCurrent;
+            Editor ed = MyOpenDocument.ed;
+
+            using (Transaction tr = db.TransactionManager.StartTransaction())
+            {
+                try
+                {
+                    // 1. Выбор прямоугольной полилинии
+                    PromptEntityOptions peo = new PromptEntityOptions("\nВыберите прямоугольную полилинию:");
+                    peo.SetRejectMessage("\nВыберите только полилинию!");
+                    peo.AddAllowedClass(typeof(Polyline), true);
+                    PromptEntityResult per = ed.GetEntity(peo);
+                    if (per.Status != PromptStatus.OK) return;
+
+                    // 2. Проверка что это прямоугольник
+                    Polyline pline = tr.GetObject(per.ObjectId, OpenMode.ForRead) as Polyline;
+                    if (!IsAxisAlignedRectangle(pline))
+                    {
+                        ed.WriteMessage("\nВыбрана не прямоугольная полилиния!");
+                        return;
+                    }
+
+                    // 2. Выбор направления смещения
+                    PromptKeywordOptions pko = new PromptKeywordOptions("\nВыберите направление смещения [Все/Горизонтально/Вертикально]:")
+                    {
+                        AllowArbitraryInput = false,
+                    };
+                    pko.Keywords.Add("Все", "ВСЕ", "Все стороны");
+                    pko.Keywords.Add("Горизонтально", "ЛП", "Слева и справа");
+                    pko.Keywords.Add("Вертикально", "ВН", "Сверху и снизу");
+                    pko.Keywords.Default = "Все";
+
+                    PromptResult pkr = ed.GetKeywords(pko);
+                    if (pkr.Status != PromptStatus.OK) return;
+
+
+                    // 3. Запрос значения расширения
+                    PromptDoubleOptions pdo = new PromptDoubleOptions("\nВведите величину расширения:")
+                    {
+                        AllowNegative = true,
+                    };
+                    PromptDoubleResult pdr = ed.GetDouble(pdo);
+                    if (pdr.Status != PromptStatus.OK) return;
+                    double offset = pdr.Value;
+
+                    // 4. Расчет нового прямоугольника
+                    pline.UpgradeOpen();
+                    ExtendRectangle(pline, offset, pkr.StringResult.ToUpper());
+
+                    tr.Commit();
+                    ed.Regen();
+                }
+                catch (Exception ex)
+                {
+                    ed.WriteMessage($"\nОшибка: {ex.Message}");
+                }
+            }
+        }
+
+        private bool IsAxisAlignedRectangle(Polyline pline)
+        {
+            // Проверка на прямоугольник с 4 вершинами, выровненный по осям
+            if (pline.NumberOfVertices != 4) return false;
+
+            Point2dCollection points = new Point2dCollection();
+            for (int i = 0; i < 4; i++)
+            {
+                points.Add(pline.GetPoint2dAt(i));
+            }
+
+            // Проверка прямых углов и параллельности сторон
+            Vector2d v1 = points[1] - points[0];
+            Vector2d v2 = points[2] - points[1];
+            Vector2d v3 = points[3] - points[2];
+            Vector2d v4 = points[0] - points[3];
+
+            return v1.IsPerpendicularTo(v2) &&
+                   v2.IsPerpendicularTo(v3) &&
+                   v3.IsPerpendicularTo(v4);
+        }
+
+        private void ExtendRectangle(Polyline pline, double offset, string direction)
+        {
+            // Находим границы прямоугольника
+            Extents2d extents = GetPolylineExtents(pline);
+            double minX = extents.MinPoint.X ;
+            double maxX = extents.MaxPoint.X ;
+            double minY = extents.MinPoint.Y ;
+            double maxY = extents.MaxPoint.Y ;
+
+            switch (direction)
+            {
+                case "ВЕРТИКАЛЬНО": // Верх/Низ
+                    minY -= offset;
+                    maxY += offset;
+                    break;
+                        
+                case "ГОРИЗОНТАЛЬНО": // Лево/Право
+                    minX -= offset;
+                    maxX += offset;
+                    break;
+
+                default: // Все стороны
+                    minX -= offset;
+                    maxX += offset;
+                    minY -= offset;
+                    maxY += offset;
+                    break;
+            }
+
+
+
+            // Обновляем вершины
+            pline.SetPointAt(0, new Point2d(minX, minY));
+            pline.SetPointAt(1, new Point2d(maxX, minY));
+            pline.SetPointAt(2, new Point2d(maxX, maxY));
+            pline.SetPointAt(3, new Point2d(minX, maxY));
+        }
+
+
+        public static Extents2d GetPolylineExtents(Polyline pline)
+        {
+            if (pline.NumberOfVertices == 0)
+                throw new ArgumentException("Полилиния не содержит вершин");
+
+            // Инициализация первыми координатами
+            Point2d firstPoint = pline.GetPoint2dAt(0);
+            double minX = firstPoint.X;
+            double maxX = firstPoint.X;
+            double minY = firstPoint.Y;
+            double maxY = firstPoint.Y;
+
+            // Обход всех вершин
+            for (int i = 1; i < pline.NumberOfVertices; i++)
+            {
+                Point2d pt = pline.GetPoint2dAt(i);
+
+                minX = Math.Min(minX, pt.X);
+                maxX = Math.Max(maxX, pt.X);
+                minY = Math.Min(minY, pt.Y);
+                maxY = Math.Max(maxY, pt.Y);
+            }
+
+            return new Extents2d(
+                new Point2d(minX, minY),
+                new Point2d(maxX, maxY)
+            );
+        }
+
+
+
+
+
+
 
         private ItemElement getMext(IsCheck Is)
         {
@@ -1209,9 +1466,9 @@ namespace ent
             MyOpenDocument.ed.WriteMessage("\n");
             MyOpenDocument.ed.WriteMessage("| йф - Сама считалка.");
             MyOpenDocument.ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
-          //  MyOpenDocument.ed.WriteMessage("| йффф - Восстановление набора по ObjectID. ТОЛЬКО ДЛЯ ТЕКУЩЕГО СЕАНСА. Восстаналивает быстро.");
+           MyOpenDocument.ed.WriteMessage("| йффф - Расширяем полиллинию на заданное расстояние");
             MyOpenDocument.ed.WriteMessage("| цф - Разворачивает профиль линии в прямую с высотами.");
-            MyOpenDocument.ed.WriteMessage("| цфф - Построить точку выстоной отметки интерполяцией имея две точки.");
+            MyOpenDocument.ed.WriteMessage("| цфф - Построить точку выстной отметки интерполяцией, имея две точки.");
             MyOpenDocument.ed.WriteMessage("| цффф - Построить размеры над полиллинией.");
             MyOpenDocument.ed.WriteMessage("| цфффф - Округлить сегменты полиллинии.");
             //MyOpenDocument.ed.WriteMessage("| йц - Скрытие фона у mTexta и Выносок");
