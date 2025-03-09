@@ -57,6 +57,9 @@ namespace ent
         public void MakeSumOrCountCommand()
 
         {
+
+            //Параметры из конфига
+            Config config = Config.LoadConfig();
             if (MyOpenDocument.doc == null) { return; }
             IsCheck _isCount = IsCheck.summ;
 
@@ -142,24 +145,30 @@ namespace ent
             PromptEntityOptions item = new PromptEntityOptions("\nВыберите объект(Mtext) куда сохранить результат: ");
             PromptEntityResult perItem = MyOpenDocument.ed.GetEntity(item);
 
-            //Умножать результат на коэфицент
-            PromptDoubleOptions pio = new PromptDoubleOptions("\n Коэффициент умножения результата");
-            pio.AllowNegative = false;
-            pio.DefaultValue = 1.04;
-            pio.AllowZero = false;
 
-            PromptDoubleResult pir = MyOpenDocument.ed.GetDouble(pio);
-            if (pir.Status != PromptStatus.OK)
+
+            double offsetResult = config.defaultCoefMultiplexResult;
+            if (config.isShowCoefMultiplex)
             {
-                MyOpenDocument.ed.WriteMessage("\nВвод отменён.");
-                return;
+
+                //Умножать результат на коэфицент
+                PromptDoubleOptions pio = new PromptDoubleOptions("\n Коэффициент умножения результата");
+                pio.AllowNegative = false;
+                pio.DefaultValue = config.defaultCoefMultiplexResult;
+                pio.AllowZero = false;
+                PromptDoubleResult pir = MyOpenDocument.ed.GetDouble(pio);
+                if (pir.Status != PromptStatus.OK)
+                {
+                    MyOpenDocument.ed.WriteMessage("\nВвод отменён.");
+                    return;
+                }
+                 offsetResult = pir.Value;
+
             }
-            double offsetResult = pir.Value;
 
 
-
-            //Обновляем текст в Мтекст
-            UpdateTextById(perItem.ObjectId, (temp.result*offsetResult).ToString(), 256);
+            //Обновляем текст в Мтекст c коэф и округлением
+            UpdateTextById(perItem.ObjectId, Math.Round( (temp.result*offsetResult),config.roundResult).ToString(), 256);
 
             string xmlData = _tools.SerializeToXml<ItemElement>(temp);
             _tools.SaveXmlToXrecord(xmlData, perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
