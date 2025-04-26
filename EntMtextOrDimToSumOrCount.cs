@@ -1242,88 +1242,195 @@ namespace ent
             
         }
 
-        [CommandMethod("цфффф")]
-        public void RoundPolylineSegments()
+        /* [CommandMethod("цфффф")]
+         public void RoundPolylineSegments()
+         {
+             Document doc = Application.DocumentManager.MdiActiveDocument;
+             Database db = doc.Database;
+             Editor ed = doc.Editor;
+
+             // Запрос выбора полилинии
+             PromptEntityOptions peo = new PromptEntityOptions("\nВыберите полилинию: ");
+             peo.SetRejectMessage("\nВыбранный объект не является полилинией.");
+             peo.AddAllowedClass(typeof(Polyline), true);
+
+             PromptEntityResult per = ed.GetEntity(peo);
+             if (per.Status != PromptStatus.OK)
+             {
+                 ed.WriteMessage("\nВыбор отменён.");
+                 return;
+             }
+
+             // Запрос количества знаков для округления
+             PromptIntegerOptions pio = new PromptIntegerOptions("\nУкажите количество знаков после запятой (0-8): ");
+             pio.AllowNegative = false;
+             pio.DefaultValue = 0;
+             pio.LowerLimit = 0;
+             pio.UpperLimit = 8;
+
+             PromptIntegerResult pir = ed.GetInteger(pio);
+             if (pir.Status != PromptStatus.OK)
+             {
+                 ed.WriteMessage("\nВвод отменён.");
+                 return;
+             }
+             int decimals = pir.Value;
+
+             using (Transaction tr = db.TransactionManager.StartTransaction())
+             {
+                 // Открываем полилинию для записи
+                 Polyline pline = tr.GetObject(per.ObjectId, OpenMode.ForWrite) as Polyline;
+                 if (pline == null)
+                 {
+                     ed.WriteMessage("\nНе удалось получить полилинию.");
+                     return;
+                 }
+
+                 // Если полилиния замкнута, временно открываем её для обработки
+                 bool wasClosed = pline.Closed;
+                 if (wasClosed)
+                 {
+                     pline.Closed = false;
+                 }
+
+                 // Изменяем длины сегментов, двигая вершины
+                 for (int i = 0; i < pline.NumberOfVertices - 1; i++)
+                 {
+                     Point3d startPoint = pline.GetPoint3dAt(i);
+                     Point3d endPoint = pline.GetPoint3dAt(i + 1);
+
+                     // Вычисляем текущую длину сегмента
+                     double currentLength = startPoint.DistanceTo(endPoint);
+                     double roundedLength = Math.Round(currentLength, decimals);
+
+                     // Вычисляем направление сегмента
+                     Vector3d direction = (endPoint - startPoint).GetNormal();
+
+                     // Новая позиция конечной точки сегмента
+                     Point3d newEndPoint = startPoint + direction * roundedLength;
+
+                     // Обновляем координаты следующей вершины
+                     pline.SetPointAt(i + 1, new Point2d(newEndPoint.X, newEndPoint.Y));
+                 }
+
+                 // Восстанавливаем состояние замкнутости
+                 if (wasClosed)
+                 {
+                     pline.Closed = true;
+                 }
+
+                 tr.Commit();
+             }
+
+             ed.WriteMessage($"\nДлины сегментов полилинии округлены до {decimals} знаков после запятой.");
+         }*/
+
+        [CommandMethod("цфффф", CommandFlags.Modal)]
+        public void RoundPolylineSegmentsExtended()
         {
-            Document doc = Application.DocumentManager.MdiActiveDocument;
-            Database db = doc.Database;
-            Editor ed = doc.Editor;
+            var doc = Application.DocumentManager.MdiActiveDocument;
+            var db = doc.Database;
+            var ed = doc.Editor;
 
-            // Запрос выбора полилинии
-            PromptEntityOptions peo = new PromptEntityOptions("\nВыберите полилинию: ");
-            peo.SetRejectMessage("\nВыбранный объект не является полилинией.");
+            // 1. Выбор полилинии
+            var peo = new PromptEntityOptions("\nВыберите полилинию: ");
+            peo.SetRejectMessage("\nНужно выбрать полилинию.");
             peo.AddAllowedClass(typeof(Polyline), true);
+            var per = ed.GetEntity(peo);
+            if (per.Status != PromptStatus.OK) return;
 
-            PromptEntityResult per = ed.GetEntity(peo);
-            if (per.Status != PromptStatus.OK)
+            // 2. Выбор метода округления
+            var pko = new PromptKeywordOptions("\nМетод округления сегментов: ");
+            pko.Keywords.Add("Точность");    // по знакам
+            pko.Keywords.Add("Кратность");   // по шагу
+            pko.Keywords.Default = "Точность";
+            var pkr = ed.GetKeywords(pko);
+            if (pkr.Status != PromptStatus.OK) return;
+
+            bool usePrecision = pkr.StringResult == "Точность";
+
+            int decimals = 0;
+            double step = 0.0;
+
+            if (usePrecision)
             {
-                ed.WriteMessage("\nВыбор отменён.");
-                return;
+                // 2a. Запрос точности (знаков после запятой)
+                var pio = new PromptIntegerOptions("\nУкажите число знаков после запятой (0–8): ");
+                pio.AllowNegative = false;
+                pio.DefaultValue = 0;
+                pio.LowerLimit = 0;
+                pio.UpperLimit = 8;
+                var pir = ed.GetInteger(pio);
+                if (pir.Status != PromptStatus.OK) return;
+                decimals = pir.Value;
+            }
+            else
+            {
+                // 2b. Запрос шага (кратности)
+                var pdo = new PromptDoubleOptions("\nВведите шаг (кратность) сегмента, > 0: ");
+                pdo.AllowNegative = false;
+                pdo.AllowZero = false;
+                pdo.DefaultValue = 1.0;
+                var pdr = ed.GetDouble(pdo);
+                if (pdr.Status != PromptStatus.OK) return;
+                step = pdr.Value;
             }
 
-            // Запрос количества знаков для округления
-            PromptIntegerOptions pio = new PromptIntegerOptions("\nУкажите количество знаков после запятой (0-8): ");
-            pio.AllowNegative = false;
-            pio.DefaultValue = 0;
-            pio.LowerLimit = 0;
-            pio.UpperLimit = 8;
-
-            PromptIntegerResult pir = ed.GetInteger(pio);
-            if (pir.Status != PromptStatus.OK)
+            // 3. Обработка полилинии
+            using (var tr = db.TransactionManager.StartTransaction())
             {
-                ed.WriteMessage("\nВвод отменён.");
-                return;
-            }
-            int decimals = pir.Value;
-
-            using (Transaction tr = db.TransactionManager.StartTransaction())
-            {
-                // Открываем полилинию для записи
-                Polyline pline = tr.GetObject(per.ObjectId, OpenMode.ForWrite) as Polyline;
+                var pline = tr.GetObject(per.ObjectId, OpenMode.ForWrite) as Polyline;
                 if (pline == null)
                 {
-                    ed.WriteMessage("\nНе удалось получить полилинию.");
+                    ed.WriteMessage("\nНе удалось открыть полилинию.");
                     return;
                 }
 
-                // Если полилиния замкнута, временно открываем её для обработки
+                // если была замкнута, размыкаем на время
                 bool wasClosed = pline.Closed;
-                if (wasClosed)
-                {
-                    pline.Closed = false;
-                }
+                if (wasClosed) pline.Closed = false;
 
-                // Изменяем длины сегментов, двигая вершины
                 for (int i = 0; i < pline.NumberOfVertices - 1; i++)
                 {
-                    Point3d startPoint = pline.GetPoint3dAt(i);
-                    Point3d endPoint = pline.GetPoint3dAt(i + 1);
+                    var p1 = pline.GetPoint3dAt(i);
+                    var p2 = pline.GetPoint3dAt(i + 1);
+                    double length = p1.DistanceTo(p2);
+                    double newLen;
 
-                    // Вычисляем текущую длину сегмента
-                    double currentLength = startPoint.DistanceTo(endPoint);
-                    double roundedLength = Math.Round(currentLength, decimals);
+                    if (usePrecision)
+                    {
+                        // округляем до заданного числа знаков
+                        newLen = Math.Round(length, decimals);
+                    }
+                    else
+                    {
+                        // берём наибольшую кратную step длину ≤ исходной
+                        double cnt = Math.Floor(length / step);
+                        newLen = cnt * step;
+                        if (newLen <= 0) newLen = length;
+                    }
 
-                    // Вычисляем направление сегмента
-                    Vector3d direction = (endPoint - startPoint).GetNormal();
+                    // направление
+                    var dir = (p2 - p1).GetNormal();
+                    var p2new = p1 + dir * newLen;
 
-                    // Новая позиция конечной точки сегмента
-                    Point3d newEndPoint = startPoint + direction * roundedLength;
-
-                    // Обновляем координаты следующей вершины
-                    pline.SetPointAt(i + 1, new Point2d(newEndPoint.X, newEndPoint.Y));
+                    // обновление вершины (только XY)
+                    pline.SetPointAt(i + 1, new Point2d(p2new.X, p2new.Y));
                 }
 
-                // Восстанавливаем состояние замкнутости
-                if (wasClosed)
-                {
-                    pline.Closed = true;
-                }
+                // возвращаем замкнутость
+                if (wasClosed) pline.Closed = true;
 
                 tr.Commit();
             }
 
-            ed.WriteMessage($"\nДлины сегментов полилинии округлены до {decimals} знаков после запятой.");
+            // 4. Вывод результата
+            if (usePrecision)
+                ed.WriteMessage($"\nСегменты округлены до {decimals} знаков после запятой.");
+            else
+                ed.WriteMessage($"\nСегменты округлены по шагу {step}.");
         }
+
 
 
 
@@ -1465,7 +1572,7 @@ namespace ent
             MyOpenDocument.dbCurrent = Application.DocumentManager.MdiActiveDocument.Database;
 
             this._tools = new Serialize(MyOpenDocument.doc, MyOpenDocument.dbCurrent, MyOpenDocument.ed);
-            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г. | ver. 1.3");
+            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г. | ver. 1.4");
             MyOpenDocument.ed.WriteMessage("\n");
             MyOpenDocument.ed.WriteMessage("| йф - Сама считалка.");
             MyOpenDocument.ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
@@ -1473,7 +1580,7 @@ namespace ent
             MyOpenDocument.ed.WriteMessage("| цф - Разворачивает профиль линии в прямую с высотами.");
             MyOpenDocument.ed.WriteMessage("| цфф - Построить точку выстной отметки интерполяцией, имея две точки.");
             MyOpenDocument.ed.WriteMessage("| цффф - Построить размеры над полиллинией.");
-            MyOpenDocument.ed.WriteMessage("| цфффф - Округлить сегменты полиллинии.");
+            MyOpenDocument.ed.WriteMessage("| цфффф - Округлить по количеству знаков или кратости сегменты полиллинии.");
             //MyOpenDocument.ed.WriteMessage("| йц - Скрытие фона у mTexta и Выносок");
             MyOpenDocument.ed.WriteMessage("\n");
 
