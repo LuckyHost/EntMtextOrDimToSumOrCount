@@ -683,34 +683,46 @@ namespace ent
         }
 
 
+       
         [CommandMethod("цффф")]
-        public void AddDimensionsToPolyline()
+        public void AddDimensionsUniversal()
         {
             Document doc = MyOpenDocument.doc;
             Database db = MyOpenDocument.dbCurrent;
             Editor ed = MyOpenDocument.ed;
 
-            // Запрос выбора полилинии
-            PromptEntityOptions peo = new PromptEntityOptions("\nВыберите полилинию: ");
+            // Выбор режима работы
+            PromptKeywordOptions modeOptions = new PromptKeywordOptions("\nВыберите режим:");
+            modeOptions.Keywords.Add("Сегменты");
+            modeOptions.Keywords.Add("Подсегменты");
+            modeOptions.Keywords.Add("ВложенныеПолилинии");
+            modeOptions.Keywords.Default= "Сегменты";
 
-            //отступ от сегмента
-
-            PromptDoubleOptions pio = new PromptDoubleOptions("\n Укажите отступ размера от сегмента");
-            pio.AllowNegative = false;
-            pio.DefaultValue = 0.25;
-
-            PromptDoubleResult pir = ed.GetDouble(pio);
-            if (pir.Status != PromptStatus.OK)
+            PromptResult modeResult = ed.GetKeywords(modeOptions);
+            if (modeResult.Status != PromptStatus.OK)
             {
                 ed.WriteMessage("\nВвод отменён.");
                 return;
             }
-            double offsetText= pir.Value;
 
+            string mode = modeResult.StringResult;
 
+            // Запрос отступа для размеров
+            PromptDoubleOptions offsetOptions = new PromptDoubleOptions("\nУкажите отступ размера от сегмента:");
+            offsetOptions.AllowNegative = false;
+            offsetOptions.DefaultValue = 0.25;
 
+            PromptDoubleResult offsetResult = ed.GetDouble(offsetOptions);
+            if (offsetResult.Status != PromptStatus.OK)
+            {
+                ed.WriteMessage("\nВвод отменён.");
+                return;
+            }
+            double offsetText = offsetResult.Value;
 
-            peo.SetRejectMessage("\nВыбранный объект не является полилинией.");
+            // Выбираем основную полилинию
+            PromptEntityOptions peo = new PromptEntityOptions("\nВыберите основную полилинию:");
+            peo.SetRejectMessage("\nВыберите полилинию.");
             peo.AddAllowedClass(typeof(Polyline), true);
 
             PromptEntityResult per = ed.GetEntity(peo);
@@ -722,53 +734,95 @@ namespace ent
 
             using (Transaction tr = db.TransactionManager.StartTransaction())
             {
-                // Открываем полилинию для чтения
-                Polyline pline = tr.GetObject(per.ObjectId, OpenMode.ForRead) as Polyline;
-                if (pline == null)
+                Polyline mainPolyline = tr.GetObject(per.ObjectId, OpenMode.ForRead) as Polyline;
+                if (mainPolyline == null)
                 {
-                    ed.WriteMessage("\nНе удалось получить полилинию.");
+                    ed.WriteMessage("\nОшибка чтения полилинии.");
                     return;
                 }
 
-                // Получаем пространство модели для добавления размеров
                 BlockTable bt = tr.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
                 BlockTableRecord btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
 
-                // Проходим по всем сегментам полилинии
-                for (int i = 0; i < pline.NumberOfVertices - 1; i++)
+                // Подготавливаем список всех полилиний (если нужно)
+                List<Polyline> allPolylines = new List<Polyline>();
+                if (mode == "Подсегменты" || mode == "ВложенныеПолилинии")
                 {
-                    Point3d startPoint = pline.GetPoint3dAt(i);
-                    Point3d endPoint = pline.GetPoint3dAt(i + 1);
-
-                    // Создаём линейный размер
-                    using (AlignedDimension dim = new AlignedDimension())
+                    foreach (ObjectId id in btr)
                     {
-                        dim.XLine1Point = startPoint; // Начальная точка сегмента
-                        dim.XLine2Point = endPoint;   // Конечная точка сегмента
-                        dim.DimLinePoint = CalculateDimLinePoint(startPoint, endPoint, offsetText); // Позиция размерной линии
-                        dim.DimensionStyle = db.Dimstyle; // Используем текущий стиль размера
-
-                        // Добавляем размер в пространство модели
-                        btr.AppendEntity(dim);
-                        tr.AddNewlyCreatedDBObject(dim, true);
+                        Entity ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                        if (ent is Polyline poly && id != mainPolyline.ObjectId)
+                        {
+                            allPolylines.Add(poly);
+                        }
                     }
                 }
 
-                // Если полилиния замкнута, добавляем размер для последнего сегмента
-                if (pline.Closed)
+                for (int i = 0; i < mainPolyline.NumberOfVertices - (mainPolyline.Closed ? 0 : 1); i++)
                 {
-                    Point3d startPoint = pline.GetPoint3dAt(pline.NumberOfVertices - 1);
-                    Point3d endPoint = pline.GetPoint3dAt(0);
+                    Point3d startPoint = mainPolyline.GetPoint3dAt(i);
+                    Point3d endPoint = (i == mainPolyline.NumberOfVertices - 1) ? mainPolyline.GetPoint3dAt(0) : mainPolyline.GetPoint3dAt(i + 1);
 
-                    using (AlignedDimension dim = new AlignedDimension())
+                    Line segmentLine = new Line(startPoint, endPoint);
+
+                    List<Point3d> splitPoints = new List<Point3d> { startPoint, endPoint };
+
+                    if (mode == "Подсегменты" || mode == "ВложенныеПолилинии")
                     {
-                        dim.XLine1Point = startPoint;
-                        dim.XLine2Point = endPoint;
-                        dim.DimLinePoint = CalculateDimLinePoint(startPoint, endPoint, offsetText);
-                        dim.DimensionStyle = db.Dimstyle;
+                        foreach (Polyline poly in allPolylines)
+                        {
+                            // Для режима "Подсегменты" - только пересечения
+                            if (mode == "Подсегменты")
+                            {
+                                Point3dCollection intersections = new Point3dCollection();
+                                poly.IntersectWith(segmentLine, Intersect.OnBothOperands, intersections, IntPtr.Zero, IntPtr.Zero);
 
-                        btr.AppendEntity(dim);
-                        tr.AddNewlyCreatedDBObject(dim, true);
+                                foreach (Point3d p in intersections)
+                                {
+                                    if (!splitPoints.Contains(p))
+                                        splitPoints.Add(p);
+                                }
+                            }
+                            // Для режима "ВложенныеПолилинии" - и пересечения, и вложенные целиком
+                            else if (mode == "ВложенныеПолилинии")
+                            {
+                                Point3dCollection intersections = new Point3dCollection();
+                                poly.IntersectWith(segmentLine, Intersect.OnBothOperands, intersections, IntPtr.Zero, IntPtr.Zero);
+
+                                foreach (Point3d p in intersections)
+                                {
+                                    if (!splitPoints.Contains(p))
+                                        splitPoints.Add(p);
+                                }
+
+                                if (IsPolylineInsideSegment(poly, segmentLine))
+                                {
+                                    if (!splitPoints.Contains(poly.StartPoint)) splitPoints.Add(poly.StartPoint);
+                                    if (!splitPoints.Contains(poly.EndPoint)) splitPoints.Add(poly.EndPoint);
+                                }
+                            }
+                        }
+                    }
+
+                    // Сортируем точки вдоль сегмента
+                    splitPoints = splitPoints.OrderBy(p => (p - startPoint).Length).ToList();
+
+                    // Создаём размеры между точками
+                    for (int j = 0; j < splitPoints.Count - 1; j++)
+                    {
+                        Point3d p1 = splitPoints[j];
+                        Point3d p2 = splitPoints[j + 1];
+
+                        using (AlignedDimension dim = new AlignedDimension())
+                        {
+                            dim.XLine1Point = p1;
+                            dim.XLine2Point = p2;
+                            dim.DimLinePoint = CalculateDimLinePoint(p1, p2, offsetText);
+                            dim.DimensionStyle = db.Dimstyle;
+
+                            btr.AppendEntity(dim);
+                            tr.AddNewlyCreatedDBObject(dim, true);
+                        }
                     }
                 }
 
@@ -778,17 +832,38 @@ namespace ent
             ed.WriteMessage("\nРазмеры успешно добавлены.");
         }
 
-        // Вспомогательный метод для вычисления позиции размерной линии
-        private Point3d CalculateDimLinePoint(Point3d start, Point3d end,double offset)
+        // Проверка на вложенность полилинии внутри отрезка
+        private bool IsPolylineInsideSegment(Polyline poly, Line segmentLine)
         {
-            Vector3d direction = end - start;
-            Vector3d perpendicular = direction.GetPerpendicularVector().Negate(); // Перпендикулярное направление
-            //double offset = 0.25; // Смещение размерной линии (можно настроить)
+            Line3d line3d = new Line3d(segmentLine.StartPoint, segmentLine.EndPoint);
 
-            // Средняя точка сегмента + смещение вверх/вниз
-            Point3d midPoint = start + (direction * 0.5);
-            return midPoint + (perpendicular * offset);
+            for (int i = 0; i < poly.NumberOfVertices; i++)
+            {
+                Point3d pt = poly.GetPoint3dAt(i);
+                double param = line3d.GetParameterOf(pt);
+                if (param < 0 || param > 1)
+                    return false;
+
+                double distance = line3d.GetDistanceTo(pt);
+                if (distance > Tolerance.Global.EqualPoint)
+                    return false;
+            }
+            return true;
         }
+
+        // Вычисление точки размещения размера
+        private Point3d CalculateDimLinePoint(Point3d p1, Point3d p2, double offset)
+        {
+            Vector3d dir = (p2 - p1).GetPerpendicularVector().GetNormal();
+            return new Point3d((p1.X + p2.X) / 2 + dir.X * offset, (p1.Y + p2.Y) / 2 + dir.Y * offset, 0);
+        }
+
+
+
+
+
+       
+       
 
 
         [CommandMethod("SmartOffset")]
@@ -1242,88 +1317,7 @@ namespace ent
             
         }
 
-        /* [CommandMethod("цфффф")]
-         public void RoundPolylineSegments()
-         {
-             Document doc = Application.DocumentManager.MdiActiveDocument;
-             Database db = doc.Database;
-             Editor ed = doc.Editor;
-
-             // Запрос выбора полилинии
-             PromptEntityOptions peo = new PromptEntityOptions("\nВыберите полилинию: ");
-             peo.SetRejectMessage("\nВыбранный объект не является полилинией.");
-             peo.AddAllowedClass(typeof(Polyline), true);
-
-             PromptEntityResult per = ed.GetEntity(peo);
-             if (per.Status != PromptStatus.OK)
-             {
-                 ed.WriteMessage("\nВыбор отменён.");
-                 return;
-             }
-
-             // Запрос количества знаков для округления
-             PromptIntegerOptions pio = new PromptIntegerOptions("\nУкажите количество знаков после запятой (0-8): ");
-             pio.AllowNegative = false;
-             pio.DefaultValue = 0;
-             pio.LowerLimit = 0;
-             pio.UpperLimit = 8;
-
-             PromptIntegerResult pir = ed.GetInteger(pio);
-             if (pir.Status != PromptStatus.OK)
-             {
-                 ed.WriteMessage("\nВвод отменён.");
-                 return;
-             }
-             int decimals = pir.Value;
-
-             using (Transaction tr = db.TransactionManager.StartTransaction())
-             {
-                 // Открываем полилинию для записи
-                 Polyline pline = tr.GetObject(per.ObjectId, OpenMode.ForWrite) as Polyline;
-                 if (pline == null)
-                 {
-                     ed.WriteMessage("\nНе удалось получить полилинию.");
-                     return;
-                 }
-
-                 // Если полилиния замкнута, временно открываем её для обработки
-                 bool wasClosed = pline.Closed;
-                 if (wasClosed)
-                 {
-                     pline.Closed = false;
-                 }
-
-                 // Изменяем длины сегментов, двигая вершины
-                 for (int i = 0; i < pline.NumberOfVertices - 1; i++)
-                 {
-                     Point3d startPoint = pline.GetPoint3dAt(i);
-                     Point3d endPoint = pline.GetPoint3dAt(i + 1);
-
-                     // Вычисляем текущую длину сегмента
-                     double currentLength = startPoint.DistanceTo(endPoint);
-                     double roundedLength = Math.Round(currentLength, decimals);
-
-                     // Вычисляем направление сегмента
-                     Vector3d direction = (endPoint - startPoint).GetNormal();
-
-                     // Новая позиция конечной точки сегмента
-                     Point3d newEndPoint = startPoint + direction * roundedLength;
-
-                     // Обновляем координаты следующей вершины
-                     pline.SetPointAt(i + 1, new Point2d(newEndPoint.X, newEndPoint.Y));
-                 }
-
-                 // Восстанавливаем состояние замкнутости
-                 if (wasClosed)
-                 {
-                     pline.Closed = true;
-                 }
-
-                 tr.Commit();
-             }
-
-             ed.WriteMessage($"\nДлины сегментов полилинии округлены до {decimals} знаков после запятой.");
-         }*/
+        
 
         [CommandMethod("цфффф", CommandFlags.Modal)]
         public void RoundPolylineSegmentsExtended()
