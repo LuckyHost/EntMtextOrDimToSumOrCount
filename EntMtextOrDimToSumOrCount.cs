@@ -744,6 +744,11 @@ namespace ent
                 BlockTable bt = tr.GetObject(db.BlockTableId, OpenMode.ForRead) as BlockTable;
                 BlockTableRecord btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
 
+                // Получаем имя текущего слоя
+                string currentLayerName = db.Clayer.GetObject(OpenMode.ForRead) is LayerTableRecord currentLayer
+                    ? currentLayer.Name
+                    : "0"; // если не удалось получить - слой "0"
+
                 // Подготавливаем список всех полилиний (если нужно)
                 List<Polyline> allPolylines = new List<Polyline>();
                 if (mode == "Подсегменты" || mode == "ВложенныеПолилинии")
@@ -819,6 +824,10 @@ namespace ent
                             dim.XLine2Point = p2;
                             dim.DimLinePoint = CalculateDimLinePoint(p1, p2, offsetText);
                             dim.DimensionStyle = db.Dimstyle;
+
+                            // >>> Задаём слой создания размера <<<
+                            dim.Layer = currentLayerName;
+
 
                             btr.AppendEntity(dim);
                             tr.AddNewlyCreatedDBObject(dim, true);
@@ -1566,14 +1575,14 @@ namespace ent
             MyOpenDocument.dbCurrent = Application.DocumentManager.MdiActiveDocument.Database;
 
             this._tools = new Serialize(MyOpenDocument.doc, MyOpenDocument.dbCurrent, MyOpenDocument.ed);
-            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г. | ver. 1.4");
+            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г. | ver. 1.5");
             MyOpenDocument.ed.WriteMessage("\n");
             MyOpenDocument.ed.WriteMessage("| йф - Сама считалка.");
             MyOpenDocument.ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
            MyOpenDocument.ed.WriteMessage("| йффф - Расширяем полиллинию на заданное расстояние");
             MyOpenDocument.ed.WriteMessage("| цф - Разворачивает профиль линии в прямую с высотами.");
             MyOpenDocument.ed.WriteMessage("| цфф - Построить точку выстной отметки интерполяцией, имея две точки.");
-            MyOpenDocument.ed.WriteMessage("| цффф - Построить размеры над полиллинией.");
+            MyOpenDocument.ed.WriteMessage("| цффф - Построить размеры над полиллинией, отделеные другими полиллиниями или вложенным.");
             MyOpenDocument.ed.WriteMessage("| цфффф - Округлить по количеству знаков или кратости сегменты полиллинии.");
             //MyOpenDocument.ed.WriteMessage("| йц - Скрытие фона у mTexta и Выносок");
             MyOpenDocument.ed.WriteMessage("\n");
