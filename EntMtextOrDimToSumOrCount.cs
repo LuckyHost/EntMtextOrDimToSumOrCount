@@ -12,12 +12,6 @@ using EntMtextOrDimToSumOrCount;
 
 
 
-
-
-
-
-
-
 #if nanoCAD
 using Application = HostMgd.ApplicationServices.Application;
 using HostMgd.ApplicationServices;
