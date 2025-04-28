@@ -281,51 +281,7 @@ namespace ent
 
         }
 
-      //  [CommandMethod("йффф", CommandFlags.UsePickSet |
-      //                CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocad
-        public void inDataSummObjId()
-
-        {
-            if (MyOpenDocument.doc == null) return;
-
-            PromptEntityOptions item = new PromptEntityOptions("\n ObjectID Выберите объект(Mtext) что б вернуть выделение: \n");
-            PromptEntityResult perItem = MyOpenDocument.ed.GetEntity(item);
-            ItemElement selectionItem = _tools.ShowExtensionDictionaryContents<ItemElement>(perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
-            if (perItem.Status != PromptStatus.OK)
-            {
-                MyOpenDocument.ed.WriteMessage("Отмена");
-                return;
-            }
-            try
-            {
-                if (selectionItem != null)
-                {
-                    List<ObjectId> tempList = new List<ObjectId>();
-
-                    if (selectionItem.SerializedAllObjectID.Any())
-
-                    {
-                        //tempList = selectionItem.SerializedAllObjectID.Select(objId => new ObjectId(new IntPtr(objId))).Where(objId => objId.IsValid & !objId.IsErased & !objId.IsNull).ToList();
-                        tempList = selectionItem.SerializedAllObjectID.Select(objId => new ObjectId(new IntPtr(objId))).ToList();
-                        SelectObjects(tempList);
-                    }
-                    else
-                    {
-                        return;
-                    }
-
-                }
-
-            }
-            catch (Exception ex)
-            {
-                MyOpenDocument.ed.WriteMessage("Не могу найти по Object ID(использовать только в ТЕКУЩЕЙ СЕССИИ), возможно надо по Handel.");
-
-                return;
-
-            }
-
-        }
+     
 
 
 
@@ -691,6 +647,9 @@ namespace ent
             Database db = MyOpenDocument.dbCurrent;
             Editor ed = MyOpenDocument.ed;
 
+            // --- Регенерация экрана ---
+            ed.Regen();
+
             // Выбор режима работы
             PromptKeywordOptions modeOptions = new PromptKeywordOptions("\nВыберите режим:");
             modeOptions.Keywords.Add("Сегменты");
@@ -749,19 +708,35 @@ namespace ent
                     ? currentLayer.Name
                     : "0"; // если не удалось получить - слой "0"
 
-                // Подготавливаем список всех полилиний (если нужно)
+
+
+                // Подготавливаем список всех видимых полилиний
                 List<Polyline> allPolylines = new List<Polyline>();
                 if (mode == "Подсегменты" || mode == "ВложенныеПолилинии")
                 {
+                    LayerTable layerTable = tr.GetObject(db.LayerTableId, OpenMode.ForRead) as LayerTable;
+
                     foreach (ObjectId id in btr)
                     {
                         Entity ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
                         if (ent is Polyline poly && id != mainPolyline.ObjectId)
                         {
-                            allPolylines.Add(poly);
+                            // Проверяем видимость слоя
+                            if (layerTable.Has(ent.Layer))
+                            {
+                                LayerTableRecord layer = tr.GetObject(layerTable[ent.Layer], OpenMode.ForRead) as LayerTableRecord;
+
+                                bool isVisible = !layer.IsOff && !layer.IsFrozen && ent.Visible;
+                                if (isVisible)
+                                {
+                                    allPolylines.Add(poly);
+                                }
+                            }
                         }
                     }
                 }
+
+                
 
                 for (int i = 0; i < mainPolyline.NumberOfVertices - (mainPolyline.Closed ? 0 : 1); i++)
                 {
@@ -807,7 +782,7 @@ namespace ent
                                 }
                             }
                         }
-                    }
+                    } 
 
                     // Сортируем точки вдоль сегмента
                     splitPoints = splitPoints.OrderBy(p => (p - startPoint).Length).ToList();
@@ -869,94 +844,120 @@ namespace ent
 
 
 
-
-
-       
-       
-
-
-        [CommandMethod("SmartOffset")]
-        public void SmartOffset()
+        [CommandMethod("DrawCenteredPLAtIntersections")]
+        public void DrawCenteredPLAtIntersections()
         {
-            Document doc = MyOpenDocument.doc;
-            Database db = MyOpenDocument.dbCurrent;
-            Editor ed = MyOpenDocument.ed;
+            var doc = MyOpenDocument.doc;
+            var db = MyOpenDocument.dbCurrent;
+            var ed = MyOpenDocument.ed;
 
-            using (Transaction tr = db.TransactionManager.StartTransaction())
+            // 1) Регенерируем, чтобы всё видно было корректно
+            ed.Regen();
+
+            // 2) Запрос длины новой полилинии (полная длина)
+            var pdOpt = new PromptDoubleOptions("\nВведите полную длину новой полилинии:")
             {
-                try
+                AllowNegative = false,
+                AllowZero = false
+            };
+            var pdRes = ed.GetDouble(pdOpt);
+            if (pdRes.Status != PromptStatus.OK) return;
+            double fullLength = pdRes.Value;
+            double halfLength = fullLength / 2.0;
+
+        
+            // Выбираем основную полилинию
+            PromptEntityOptions peo = new PromptEntityOptions("\nВыберите основную полилинию:");
+            peo.SetRejectMessage("\nВыберите полилинию.");
+            peo.AddAllowedClass(typeof(Polyline), true);
+
+
+
+            var per = ed.GetEntity(peo);
+            if (per.Status != PromptStatus.OK) return;
+
+            using (var tr = db.TransactionManager.StartTransaction())
+            {
+                // Открываем основную полилинию
+                var mainPl = tr.GetObject(per.ObjectId, OpenMode.ForRead) as Polyline;
+                if (mainPl == null)
                 {
-                    // 1. Выбор полилинии
-                    PromptEntityOptions peo = new PromptEntityOptions("\nВыберите полилинию:");
-                    peo.SetRejectMessage("\nВыберите только полилинию!");
-                    peo.AddAllowedClass(typeof(Polyline), true);
-                    PromptEntityResult per = ed.GetEntity(peo);
-                    if (per.Status != PromptStatus.OK) return;
+                    ed.WriteMessage("\nНе удалось получить полилинию.");
+                    return;
+                }
 
-                    // 2. Выбор направления смещения
-                    PromptKeywordOptions pko = new PromptKeywordOptions("\nВыберите направление смещения [Все/Горизонтально/Вертикально]:")
+                // Получаем таблицы
+                var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
+                var ms = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+                var lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
+
+                // 4) Собираем все видимые полилинии (кроме основной)
+                var others = new List<Polyline>();
+                foreach (ObjectId id in ms)
+                {
+                    if (id == mainPl.ObjectId) continue;
+                    var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
+                    if (ent is Polyline pl)
                     {
-                        AllowArbitraryInput = false,
-                    };
-                    pko.Keywords.Add("Все", "ВСЕ", "Все стороны");
-                    pko.Keywords.Add("Горизонтально", "ГОР", "Слева и справа");
-                    pko.Keywords.Add("Вертикально", "ВЕР", "Сверху и снизу");
-                    pko.Keywords.Default = "Все";
+                        if (lt.Has(ent.Layer))
+                        {
+                            var ltr = (LayerTableRecord)tr.GetObject(lt[ent.Layer], OpenMode.ForRead);
+                            if (!ltr.IsOff && !ltr.IsFrozen && ent.Visible)
+                                others.Add(pl);
+                        }
+                    }
+                }
 
-                    PromptResult pkr = ed.GetKeywords(pko);
-                    if (pkr.Status != PromptStatus.OK) return;
+                // 5) Проходим по каждому сегменту основной полилинии
+                int segCount = mainPl.Closed ? mainPl.NumberOfVertices : mainPl.NumberOfVertices - 1;
+                for (int i = 0; i < segCount; i++)
+                {
+                    int next = (i + 1) % mainPl.NumberOfVertices;
+                    var p1 = mainPl.GetPoint3dAt(i);
+                    var p2 = mainPl.GetPoint3dAt(next);
 
-                    // 3. Ввод значения смещения
-                    PromptDoubleOptions pdo = new PromptDoubleOptions("\nВведите величину смещения:")
+                    // Собираем точки пересечения для этого сегмента
+                    var pts = new HashSet<Point3d>();
+                    var segLine = new Line(p1, p2);
+
+                    foreach (var pl in others)
                     {
-                        AllowNegative = true,
-                        AllowZero = false
-                    };
-                    PromptDoubleResult pdr = ed.GetDouble(pdo);
-                    if (pdr.Status != PromptStatus.OK) return;
-                    double offset = pdr.Value;
-
-                    // 4. Получение полилинии
-                    Polyline pline = tr.GetObject(per.ObjectId, OpenMode.ForWrite) as Polyline;
-
-                    // 5. Применение смещения
-                    for (int i = 0; i < pline.NumberOfVertices; i++)
-                    {
-                        Point2d pt = pline.GetPoint2dAt(i);
-                        Vector2d offsetVector = GetOffsetVector(pline, i, offset, pkr.StringResult);
-                        pline.SetPointAt(i, pt + offsetVector);
+                        var ic = new Point3dCollection();
+                        pl.IntersectWith(segLine, Intersect.OnBothOperands, ic, IntPtr.Zero, IntPtr.Zero);
+                        foreach (Point3d ip in ic)
+                            pts.Add(ip);
                     }
 
-                    tr.Commit();
-                    ed.Regen();
+                    // 6) Для каждой точки пересечения рисуем новую полилинию
+                    var dir = (p2 - p1).GetNormal();
+                    string currentLayer = db.Clayer.GetObject(OpenMode.ForRead) is LayerTableRecord currLtr
+                                          ? currLtr.Name
+                                          : "0";
+
+                    foreach (var ip in pts)
+                    {
+                        // Вычисляем концы новой полилинии
+                        var start = ip - dir * halfLength;
+                        var end = ip + dir * halfLength;
+
+                        // Создаём простую 2D-полилинию из двух вершин
+                        var newPl = new Polyline();
+                        newPl.AddVertexAt(0, new Point2d(start.X, start.Y), 0, 0, 0);
+                        newPl.AddVertexAt(1, new Point2d(end.X, end.Y), 0, 0, 0);
+                        newPl.Layer = currentLayer;
+
+                        ms.AppendEntity(newPl);
+                        tr.AddNewlyCreatedDBObject(newPl, true);
+                    }
                 }
-                catch (Exception ex)
-                {
-                    ed.WriteMessage($"\nОшибка: {ex.Message}");
-                }
+
+                tr.Commit();
             }
+
+            ed.WriteMessage("\nНовые полилинии успешно построены по точкам пересечения.");
         }
 
-        private Vector2d GetOffsetVector(Polyline pline, int index, double offset, string mode)
-        {
-            switch (mode.ToUpper())
-            {
-                case "ГОР": // Горизонтальное смещение
-                    return new Vector2d(offset, 0);
 
-                case "ВЕР": // Вертикальное смещение
-                    return new Vector2d(0, offset);
-
-                default: // Смещение во все стороны
-                    int prev = (index == 0) ? pline.NumberOfVertices - 1 : index - 1;
-                    int next = (index == pline.NumberOfVertices - 1) ? 0 : index + 1;
-
-                    Vector2d v1 = (pline.GetPoint2dAt(prev) - pline.GetPoint2dAt(index)).GetNormal();
-                    Vector2d v2 = (pline.GetPoint2dAt(next) - pline.GetPoint2dAt(index)).GetNormal();
-
-                    return (v1 + v2).GetNormal() * offset;
-            }
-        }
 
         [CommandMethod("йффф")]
         public void ExpandRectangle()
