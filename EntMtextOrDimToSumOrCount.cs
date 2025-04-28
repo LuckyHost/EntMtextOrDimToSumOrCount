@@ -8,6 +8,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using EntMtextOrDimToSumOrCount;
+using Teigha.Colors;
+
 
 
 
@@ -844,17 +846,18 @@ namespace ent
 
 
 
-        [CommandMethod("DrawCenteredPLAtIntersections")]
-        public void DrawCenteredPLAtIntersections()
+
+
+        [CommandMethod("DrawCenteredPLAtIntersectionsWithMLeader")]
+        public void DrawCenteredPLAtIntersectionsWithMLeader()
         {
             var doc = MyOpenDocument.doc;
             var db = MyOpenDocument.dbCurrent;
             var ed = MyOpenDocument.ed;
 
-            // 1) Регенерируем, чтобы всё видно было корректно
             ed.Regen();
 
-            // 2) Запрос длины новой полилинии (полная длина)
+            // 1) Запрос длины новой полилинии
             var pdOpt = new PromptDoubleOptions("\nВведите полную длину новой полилинии:")
             {
                 AllowNegative = false,
@@ -865,20 +868,35 @@ namespace ent
             double fullLength = pdRes.Value;
             double halfLength = fullLength / 2.0;
 
-        
-            // Выбираем основную полилинию
+            // 2) Нужно ли вставлять мультивыноски?
+            bool needMLeader = false;
+            bool immediateTextInput = false;
+            string defaultText = "ХХХ";
+
+            var pko = new PromptKeywordOptions("\nДобавлять мультивыноски на пересечениях? [Да/Нет]:", "Да Нет");
+            var pkr = ed.GetKeywords(pko);
+            if (pkr.Status == PromptStatus.OK && pkr.StringResult == "Да")
+            {
+                needMLeader = true;
+
+                var pko2 = new PromptKeywordOptions("\nСразу ввести текст мультивыноски? [Да/Нет]:", "Да Нет");
+                var pkr2 = ed.GetKeywords(pko2);
+                if (pkr2.Status == PromptStatus.OK && pkr2.StringResult == "Да")
+                {
+                    immediateTextInput = true;
+                }
+            }
+
+            // 3) Выбор основной полилинии
             PromptEntityOptions peo = new PromptEntityOptions("\nВыберите основную полилинию:");
             peo.SetRejectMessage("\nВыберите полилинию.");
             peo.AddAllowedClass(typeof(Polyline), true);
-
-
 
             var per = ed.GetEntity(peo);
             if (per.Status != PromptStatus.OK) return;
 
             using (var tr = db.TransactionManager.StartTransaction())
             {
-                // Открываем основную полилинию
                 var mainPl = tr.GetObject(per.ObjectId, OpenMode.ForRead) as Polyline;
                 if (mainPl == null)
                 {
@@ -886,12 +904,10 @@ namespace ent
                     return;
                 }
 
-                // Получаем таблицы
                 var bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
                 var ms = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
                 var lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
 
-                // 4) Собираем все видимые полилинии (кроме основной)
                 var others = new List<Polyline>();
                 foreach (ObjectId id in ms)
                 {
@@ -908,7 +924,6 @@ namespace ent
                     }
                 }
 
-                // 5) Проходим по каждому сегменту основной полилинии
                 int segCount = mainPl.Closed ? mainPl.NumberOfVertices : mainPl.NumberOfVertices - 1;
                 for (int i = 0; i < segCount; i++)
                 {
@@ -916,7 +931,6 @@ namespace ent
                     var p1 = mainPl.GetPoint3dAt(i);
                     var p2 = mainPl.GetPoint3dAt(next);
 
-                    // Собираем точки пересечения для этого сегмента
                     var pts = new HashSet<Point3d>();
                     var segLine = new Line(p1, p2);
 
@@ -928,7 +942,6 @@ namespace ent
                             pts.Add(ip);
                     }
 
-                    // 6) Для каждой точки пересечения рисуем новую полилинию
                     var dir = (p2 - p1).GetNormal();
                     string currentLayer = db.Clayer.GetObject(OpenMode.ForRead) is LayerTableRecord currLtr
                                           ? currLtr.Name
@@ -936,26 +949,81 @@ namespace ent
 
                     foreach (var ip in pts)
                     {
-                        // Вычисляем концы новой полилинии
                         var start = ip - dir * halfLength;
                         var end = ip + dir * halfLength;
 
-                        // Создаём простую 2D-полилинию из двух вершин
                         var newPl = new Polyline();
                         newPl.AddVertexAt(0, new Point2d(start.X, start.Y), 0, 0, 0);
                         newPl.AddVertexAt(1, new Point2d(end.X, end.Y), 0, 0, 0);
                         newPl.Layer = currentLayer;
-
                         ms.AppendEntity(newPl);
                         tr.AddNewlyCreatedDBObject(newPl, true);
+
+                        // Добавляем мультивыноску если нужно
+                        if (needMLeader)
+                        {
+                            string textForLeader = defaultText;
+                            if (immediateTextInput)
+                            {
+                                ZoomToEntity(newPl.ObjectId,3);
+                                var pStrOpts = new PromptStringOptions("\nВведите текст для мультивыноски:")
+                                {
+                                    AllowSpaces = true
+                                };
+                                var pStrRes = ed.GetString(pStrOpts);
+                                if (pStrRes.Status == PromptStatus.OK)
+                                    textForLeader = pStrRes.StringResult;
+                                else
+                                    textForLeader = defaultText;
+                            }
+
+                            MLeader mLeader = CreateMLeader(ip, textForLeader, db);
+                            if (mLeader != null)
+                            {
+                                mLeader.Layer = currentLayer;
+                                ms.AppendEntity(mLeader);
+                                tr.AddNewlyCreatedDBObject(mLeader, true);
+                            }
+                        }
                     }
                 }
 
                 tr.Commit();
             }
 
-            ed.WriteMessage("\nНовые полилинии успешно построены по точкам пересечения.");
+            ed.WriteMessage("\nОбработка завершена.");
         }
+
+        // Вспомогательная функция создания мультивыноски
+        private MLeader CreateMLeader(Point3d attachPoint, string text, Database db)
+        {
+            MLeader mleader = new MLeader();
+            mleader.ContentType = ContentType.MTextContent;
+            mleader.SetDatabaseDefaults();
+
+            // Установка стиля мультивыноски по умолчанию из базы данных
+            mleader.MLeaderStyle = db.MLeaderstyle;
+
+            MText mtext = new MText
+            {
+                Contents = text,
+                //TextHeight = 2.5 // Можно поменять на нужный размер
+                Color= Color.FromColorIndex(ColorMethod.ByAci, 256) //Цвето по слою
+        };
+
+            int leaderIndex = mleader.AddLeader();
+            int leaderLineIndex = mleader.AddLeaderLine(leaderIndex);
+            mleader.AddFirstVertex(leaderLineIndex, attachPoint);
+            mleader.AddLastVertex(leaderLineIndex, attachPoint+new Vector3d(1,3,0));
+            mleader.MText = mtext;
+            mleader.DoglegLength = 1; //длина полки
+            //mleader.SetDogleg(leaderIndex, new Vector3d(0.7,0,0)); // отступ от стрелки
+           // mleader.ArrowSize = 2.0; // размер стрелки
+           mleader.LandingGap = 0.3; // расстояние между стрелкой и текстом
+
+            return mleader;
+        }
+
 
 
 
@@ -1576,15 +1644,16 @@ namespace ent
             MyOpenDocument.dbCurrent = Application.DocumentManager.MdiActiveDocument.Database;
 
             this._tools = new Serialize(MyOpenDocument.doc, MyOpenDocument.dbCurrent, MyOpenDocument.ed);
-            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г. | ver. 1.5");
+            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г. | ver. 1.6");
             MyOpenDocument.ed.WriteMessage("\n");
             MyOpenDocument.ed.WriteMessage("| йф - Сама считалка.");
             MyOpenDocument.ed.WriteMessage("| йфф - Восстановление набора по Handle. Долго восстанавливает при большом чертеже.");
-           MyOpenDocument.ed.WriteMessage("| йффф - Расширяем полиллинию на заданное расстояние");
+           MyOpenDocument.ed.WriteMessage(" | йффф - Расширяем полиллинию на заданное расстояние");
             MyOpenDocument.ed.WriteMessage("| цф - Разворачивает профиль линии в прямую с высотами.");
             MyOpenDocument.ed.WriteMessage("| цфф - Построить точку выстной отметки интерполяцией, имея две точки.");
             MyOpenDocument.ed.WriteMessage("| цффф - Построить размеры над полиллинией, отделеные другими полиллиниями или вложенным.");
             MyOpenDocument.ed.WriteMessage("| цфффф - Округлить по количеству знаков или кратости сегменты полиллинии.");
+            MyOpenDocument.ed.WriteMessage("| DrawCenteredPLAtIntersectionsWithMLeader - Расставляет полиллинию вдоль определенного размера с возможность отображения мультивыноски.");
             //MyOpenDocument.ed.WriteMessage("| йц - Скрытие фона у mTexta и Выносок");
             MyOpenDocument.ed.WriteMessage("\n");
 
