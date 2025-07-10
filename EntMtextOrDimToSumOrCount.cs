@@ -1230,13 +1230,13 @@ namespace ent
             if (acSSPrompt.Status == PromptStatus.OK)
             {
                 SelectionSet acSSet = acSSPrompt.Value;
-
-                foreach (SelectedObject acSSObj in acSSet)
+                using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                 {
-                    if (acSSObj != null)
+                    foreach (SelectedObject acSSObj in acSSet)
                     {
-                        using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+                        if (acSSObj != null)
                         {
+
                             ObjectId objId = acSSObj.ObjectId;
                             Entity entity = trAdding.GetObject(objId, OpenMode.ForRead) as Entity;
 
@@ -1269,9 +1269,10 @@ namespace ent
                                     }
                                 }
                             }
-                            trAdding.Commit();
+
                         }
                     }
+                    trAdding.Commit();
                 }
                 resultItem.AllHandel = new List<Handle>(tempListHandle);
                 resultItem.AllObjectID = new List<ObjectId>(tempObjectID);
@@ -1301,13 +1302,14 @@ namespace ent
             if (acSSPrompt.Status == PromptStatus.OK)
             {
                 SelectionSet acSSet = acSSPrompt.Value;
-
-                foreach (SelectedObject acSSObj in acSSet)
+                using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                 {
-                    if (acSSObj != null)
+
+                    foreach (SelectedObject acSSObj in acSSet)
                     {
-                        using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+                        if (acSSObj != null)
                         {
+
                             ObjectId objId = acSSObj.ObjectId;
                             Entity entity = trAdding.GetObject(objId, OpenMode.ForRead) as Entity;
 
@@ -1327,9 +1329,10 @@ namespace ent
                                     tempObjectID.Add(entity.ObjectId);
                                 }
                             }
-                            trAdding.Commit();
+                            
                         }
                     }
+                    trAdding.Commit();
                 }
                 resultItem.AllHandel = new List<Handle>(tempListHandle);
                 resultItem.AllObjectID = new List<ObjectId>(tempObjectID);
@@ -1354,15 +1357,16 @@ namespace ent
             if (acSSPrompt.Status == PromptStatus.OK)
             {
                 SelectionSet acSSet = acSSPrompt.Value;
-
-                foreach (SelectedObject acSSObj in acSSet)
+                using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                 {
-                    if (acSSObj != null)
+
+                    foreach (SelectedObject acSSObj in acSSet)
                     {
-
-
-                        using (Transaction trAdding = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+                        if (acSSObj != null)
                         {
+
+
+
                             ObjectId objId = acSSObj.ObjectId;
 
                             //Проверка на dim
@@ -1402,32 +1406,33 @@ namespace ent
                                     resultItem.result = resultItem.result + resultMeasurement;
                                 }
 
-                                trAdding.Commit();
+
                             }
                         }
                     }
+                    trAdding.Commit();
                 }
             }
 
             resultItem.AllHandel = tempListHandle;
-                    resultItem.AllObjectID = new List<ObjectId>(tempObjectID);
-                
+            resultItem.AllObjectID = new List<ObjectId>(tempObjectID);
 
-                if (Is == IsCheck.count)
-                {
-                    resultItem.result = resultItem.AllHandel.Count();
-                }
 
-                if (Is == IsCheck.ave)
-                {
-                    resultItem.result = resultItem.result / resultItem.AllHandel.Count();
-                }
-            
-                return resultItem;
-            
+            if (Is == IsCheck.count)
+            {
+                resultItem.result = resultItem.AllHandel.Count();
+            }
+
+            if (Is == IsCheck.ave)
+            {
+                resultItem.result = resultItem.result / resultItem.AllHandel.Count();
+            }
+
+            return resultItem;
+
         }
 
-        
+
 
         [CommandMethod("цфффф", CommandFlags.Modal)]
         public void RoundPolylineSegmentsExtended()

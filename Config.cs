@@ -11,8 +11,7 @@ namespace EntMtextOrDimToSumOrCount
         public double defaultCoefMultiplexResult { get; set; } = 1;
         public bool isShowCoefMultiplex{ get; set; } = true;
 
-        private static readonly string pathDLLFile = GetDllDirectory();
-        private static readonly string configPath = Path.Combine(pathDLLFile, "myConfig.ini");
+        private static readonly string configPath = Path.Combine(GetDllDirectory(), "myConfig.ini");
 
         public static Config LoadConfig()
         {
@@ -42,14 +41,26 @@ namespace EntMtextOrDimToSumOrCount
 
         public void SaveConfig()
         {
-            var data = new Dictionary<string, string>
-        {
-            { "defaultCoefMultiplexResult", defaultCoefMultiplexResult.ToString() },
-            { "roundResult", roundResult.ToString() },
-            { "isShowCoefMultiplex", isShowCoefMultiplex ? "1" : "0" }
-        };
+            // Используем StreamWriter для прямой записи в файл
+            using (var writer = new StreamWriter(configPath))
+            {
+                writer.WriteLine("[Settings]");
+                writer.WriteLine(); // Пустая строка для наглядности
 
-            IniFile.Write(configPath, data);
+                // Комментарий для настройки roundResult
+                writer.WriteLine("; Количество знаков для округления итогового результата (например: 2)");
+                writer.WriteLine($"roundResult={this.roundResult}");
+                writer.WriteLine();
+
+                // Комментарий для настройки defaultCoefMultiplexResult
+                writer.WriteLine("; Коэффициент умножения результата по умолчанию (разделитель - запятая, например: 1,04)");
+                writer.WriteLine($"defaultCoefMultiplexResult={this.defaultCoefMultiplexResult}");
+                writer.WriteLine();
+
+                // Комментарий для настройки isShowCoefMultiplex
+                writer.WriteLine("; Показывать ли пользователю запрос на ввод коэффициента? (1 = да, 0 = нет)");
+                writer.WriteLine($"isShowCoefMultiplex={(this.isShowCoefMultiplex ? "1" : "0")}");
+            }
         }
 
         private static string GetDllDirectory()
