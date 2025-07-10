@@ -265,7 +265,7 @@ namespace ent
 
 
                         stopwatch.Stop();
-                        MyOpenDocument.ed.WriteMessage("Прошло с момента операции:  " + stopwatch.Elapsed.TotalSeconds + " c.");
+                        MyOpenDocument.ed.WriteMessage("Прошло с момента операции:  " + stopwatch.Elapsed.Milliseconds + " мc.");
                         tr.Commit();
 
                         if (tempList.Count < selectionItem.SerializedAllHandel.Count)
@@ -734,34 +734,55 @@ namespace ent
                     // 3. Получаем доступ к таблице слоев чертежа для последующей проверки.
                     LayerTable layerTable = tr.GetObject(db.LayerTableId, OpenMode.ForRead) as LayerTable;
 
-                    // 4. Начинаем перебор ВСЕХ объектов в пространстве модели (btr - это BlockTableRecord модели).
-                    foreach (ObjectId id in btr)
-                    {
-                        // 5. Для каждого ID получаем сам объект (Entity) из базы данных.
-                        Entity ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
 
-                        // 6. Главная проверка: является ли объект полилинией И не является ли он главной полилинией.
-                        if (ent is Polyline poly && ent.Visible && id != mainPolyline.ObjectId)
+                    //Создаем фильтр, чтобы выбирать ТОЛЬКО полилинии
+
+                    //Филтр полилиний и проверка на замкнутость
+                    TypedValue[] filterValues = new TypedValue[]
                         {
-                            
-                            // 7. Проверяем, существует ли слой, на котором лежит объект.
-                            if (layerTable.Has(ent.Layer))
+                        // --- Начало логической группы "ИЛИ" ---
+                        new TypedValue((int)DxfCode.Operator, "<OR"), 
+
+                        // Правило 1: Тип объекта - "POLYLINE" (старая тяжелая 3D полилиния)
+                        new TypedValue((int)DxfCode.Start, "POLYLINE"), 
+    
+                        // Правило 2: Тип объекта - "LWPOLYLINE" (легковесная 2D полилиния)
+                        new TypedValue((int)DxfCode.Start, "LWPOLYLINE"),
+
+                        // --- Конец логической группы "ИЛИ" ---
+                        new TypedValue((int)DxfCode.Operator, "OR>")
+                        };
+
+                    SelectionFilter filter = new SelectionFilter(filterValues);
+
+                    // 2. Просим редактор выбрать все объекты, соответствующие фильтру
+                    PromptSelectionResult psr = ed.SelectAll(filter);
+
+                    // 3.Работаем с уже отфильтрованным, гораздо меньшим набором
+                    if (psr.Status == PromptStatus.OK)
+                    {
+                        foreach (ObjectId id in psr.Value.GetObjectIds())
+                        {
+                            if (id == mainPolyline.ObjectId) continue;
+
+                            // Открываем полилинию напрямую, т.к. фильтр гарантирует тип
+                            var pl = tr.GetObject(id, OpenMode.ForRead) as Polyline;
+
+                            // Дополнительная проверка на случай, если что-то пошло не так (опционально, но рекомендуется)
+                            if (pl == null) continue;
+
+                            // Проводим проверки на видимость
+                            if (layerTable.Has(pl.Layer))
                             {
-                                // 8. Если слой есть, получаем его запись (LayerTableRecord).
-                                LayerTableRecord layer = tr.GetObject(layerTable[ent.Layer], OpenMode.ForRead) as LayerTableRecord;
-
-                                // 9. Составляем итоговое условие видимости.
-                                bool isVisible = !layer.IsOff && !layer.IsFrozen ;
-
-                                // 10. Если все условия видимости соблюдены...
-                                if (isVisible)
+                                LayerTableRecord ltr = tr.GetObject(layerTable[pl.Layer], OpenMode.ForRead) as LayerTableRecord;
+                                if (!ltr.IsOff && !ltr.IsFrozen && pl.Visible)
                                 {
-                                    // 11. ...добавляем эту полилинию в наш список.
-                                    allPolylines.Add(poly);
+                                    allPolylines.Add(pl);
                                 }
                             }
                         }
                     }
+
                 }
 
 
@@ -881,7 +902,7 @@ namespace ent
             var db = MyOpenDocument.dbCurrent;
             var ed = MyOpenDocument.ed;
 
-            ed.Regen();
+            //ed.Regen();
 
             // 1) Запрос длины новой полилинии
             var pdOpt = new PromptDoubleOptions("\nВведите полную длину новой полилинии:")
@@ -936,20 +957,59 @@ namespace ent
                 var lt = (LayerTable)tr.GetObject(db.LayerTableId, OpenMode.ForRead);
 
                 var others = new List<Polyline>();
-                foreach (ObjectId id in ms)
-                {
-                    if (id == mainPl.ObjectId) continue;
-                    var ent = tr.GetObject(id, OpenMode.ForRead) as Entity;
-                    if (ent is Polyline pl)
+
+                // 1. Создаем фильтр, чтобы выбирать ТОЛЬКО полилинии
+
+                //Филтр полилиний и проверка на замкнутость
+                TypedValue[] filterValues = new TypedValue[]
                     {
-                        if (lt.Has(ent.Layer))
+                        // --- Начало логической группы "ИЛИ" ---
+                        new TypedValue((int)DxfCode.Operator, "<OR"), 
+
+                        // Правило 1: Тип объекта - "POLYLINE" (старая тяжелая 3D полилиния)
+                        new TypedValue((int)DxfCode.Start, "POLYLINE"), 
+    
+                        // Правило 2: Тип объекта - "LWPOLYLINE" (легковесная 2D полилиния)
+                        new TypedValue((int)DxfCode.Start, "LWPOLYLINE"),
+
+                        // --- Конец логической группы "ИЛИ" ---
+                        new TypedValue((int)DxfCode.Operator, "OR>")
+                    };
+
+
+                SelectionFilter filter = new SelectionFilter(filterValues);
+
+
+                // 2. Просим редактор выбрать все объекты, соответствующие фильтру
+                PromptSelectionResult psr = ed.SelectAll(filter);
+
+                // 3. Работаем с уже отфильтрованным, гораздо меньшим набором
+                if (psr.Status == PromptStatus.OK)
+                {
+                    foreach (ObjectId id in psr.Value.GetObjectIds())
+                    {
+                        if (id == mainPl.ObjectId) continue;
+
+                        // Открываем полилинию напрямую, т.к. фильтр гарантирует тип
+                        var pl = tr.GetObject(id, OpenMode.ForRead) as Polyline;
+
+                        // Дополнительная проверка на случай, если что-то пошло не так (опционально, но рекомендуется)
+                        if (pl == null) continue;
+
+                        // Проводим проверки на видимость
+                        if (lt.Has(pl.Layer))
                         {
-                            var ltr = (LayerTableRecord)tr.GetObject(lt[ent.Layer], OpenMode.ForRead);
-                            if (!ltr.IsOff && !ltr.IsFrozen && ent.Visible)
+                            var ltr = (LayerTableRecord)tr.GetObject(lt[pl.Layer], OpenMode.ForRead);
+                            if (!ltr.IsOff && !ltr.IsFrozen && pl.Visible)
+                            {
                                 others.Add(pl);
+                            }
                         }
                     }
                 }
+
+
+              
 
                 int segCount = mainPl.Closed ? mainPl.NumberOfVertices : mainPl.NumberOfVertices - 1;
                 for (int i = 0; i < segCount; i++)
@@ -985,6 +1045,8 @@ namespace ent
                         newPl.Layer = currentLayer;
                         ms.AppendEntity(newPl);
                         tr.AddNewlyCreatedDBObject(newPl, true);
+
+
 
                         // Добавляем мультивыноску если нужно
                         if (needMLeader)
@@ -1991,7 +2053,7 @@ private List<Tuple<ObjectId, Point3d, Point3d>> GetBoundingBoxes(List<ObjectId> 
             MyOpenDocument.dbCurrent = Application.DocumentManager.MdiActiveDocument.Database;
 
             this._tools = new Serialize(MyOpenDocument.doc, MyOpenDocument.dbCurrent, MyOpenDocument.ed);
-            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г. | ver. 1.цффф6");
+            MyOpenDocument.ed.WriteMessage("Loading... EntMtextOrDimToSumOrCount | AeroHost 2025г. | ver. 1.7");
             MyOpenDocument.ed.WriteMessage("\n");
             MyOpenDocument.ed.WriteMessage("| йф - Функция подсчета суммы\\количества (MTexta,размеров или прочее).");
             MyOpenDocument.ed.WriteMessage("| йфф - Восстановление набора выделенных объектов (по Handle).");
