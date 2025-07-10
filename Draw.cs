@@ -390,6 +390,53 @@ namespace EntMtextOrDimToSumOrCount
             }
         }
 
+        public static  MLeader CreateMLeader(List<Point3d> arrowheadPoints, Point3d textLocation, string text, Database db)
+        {
+            // Безопасная проверка на случай, если список пуст
+            if (arrowheadPoints == null || arrowheadPoints.Count == 0)
+            {
+                throw new ArgumentException("Список точек для стрелок не может быть пустым.", nameof(arrowheadPoints));
+            }
+
+            MLeader mleader = new MLeader();
+
+            // --- Шаг 1: Настройка контента (текста) ---
+            mleader.ContentType = ContentType.MTextContent;
+            MText mtext = new MText
+            {
+                Contents = text,
+                Color = Color.FromColorIndex(ColorMethod.ByLayer, 256)
+            };
+            mleader.MText = mtext;
+
+            // --- Шаг 2: Установка стиля и свойств по умолчанию ---
+            mleader.SetDatabaseDefaults(db);
+            mleader.MLeaderStyle = db.MLeaderstyle;
+
+            // --- Шаг 3: Настройка геометрии ---
+
+            // Устанавливаем положение для общего текстового блока
+            mleader.TextLocation = textLocation;
+
+            // Добавляем один общий "кластер" для всех наших линий-выносок
+            int leaderIndex = mleader.AddLeader();
+
+            // --- ШАГ 4 (Ключевое изменение): Создаем выноски в цикле ---
+            // Перебираем все точки из списка, который пришел в функцию
+            foreach (Point3d arrowPoint in arrowheadPoints)
+            {
+                // Для каждой точки создаем свою собственную линию
+                int leaderLineIndex = mleader.AddLeaderLine(leaderIndex);
+
+                // и указываем, куда должна смотреть ее стрелка
+                mleader.AddFirstVertex(leaderLineIndex, arrowPoint);
+            }
+
+            mleader.LandingGap = 0.3;
+
+            return mleader;
+        }
+
 
 
     }
