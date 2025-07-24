@@ -10,6 +10,10 @@ using System.Diagnostics;
 using EntMtextOrDimToSumOrCount;
 using Teigha.Colors;
 using System.Runtime.ConstrainedExecution;
+using System.Collections;
+using Teigha.DatabaseServices.Filters;
+
+
 
 
 
@@ -160,13 +164,13 @@ namespace ent
                     MyOpenDocument.ed.WriteMessage("\nВвод отменён.");
                     return;
                 }
-                 offsetResult = pir.Value;
+                offsetResult = pir.Value;
 
             }
 
 
             //Обновляем текст в Мтекст c коэф и округлением
-            UpdateTextById(perItem.ObjectId, Math.Round( (temp.result*offsetResult),config.roundResult).ToString(), 256);
+            UpdateTextById(perItem.ObjectId, Math.Round((temp.result * offsetResult), config.roundResult).ToString(), 256);
 
             string xmlData = _tools.SerializeToXml<ItemElement>(temp);
             _tools.SaveXmlToXrecord(xmlData, perItem.ObjectId, "Makarov.D_entMtextOrDimensionToSum");
@@ -186,11 +190,13 @@ namespace ent
 
         {
             if (MyOpenDocument.doc == null) return;
-
+            bool drawLeader = false;
             try
             {
+
                 PromptEntityOptions item = new PromptEntityOptions("\n Handl. Выберите объект(Mtext) что б вернуть выделение: \n");
                 PromptEntityResult perItem = MyOpenDocument.ed.GetEntity(item);
+
 
                 if (perItem.Status != PromptStatus.OK)
                 {
@@ -206,15 +212,6 @@ namespace ent
                     List<ObjectId> tempList = new List<ObjectId>();
                     Stopwatch stopwatch = new Stopwatch();
 
-                    ObjectId[] allentity;
-                    using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
-                    {
-                        // Используем транзакцию для открытия таблицы объектов
-                        BlockTable bt = tr.GetObject(MyOpenDocument.dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
-                        BlockTableRecord modelSpace = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
-                        allentity = modelSpace.Cast<ObjectId>().ToArray();
-                        tr.Commit();
-                    }
 
                     using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
                     {
@@ -239,54 +236,123 @@ namespace ent
                                      }
                                      catch { /* Игнорируем некорректные хэндлы */ }
                                  }
-
-
-                                 /*Резерв рабочего кода
-                                 foreach (string itemHandelString in selectionItem.SerializedAllHandel)
-                                 {
-                                     foreach (ObjectId objectId in allentity)
-                                     {
-                                         Entity entity = tr.GetObject(objectId, OpenMode.ForRead) as Entity;
-
-                                         if (entity != null && entity.Handle.ToString() == itemHandelString)
-                                         {
-                                             // Добавляем ObjectID, если handle равны
-                                             tempList.Add(objectId);
-                                             // Может потребоваться прервать внутренний цикл, если соответствие найдено
-                                             break;
-                                         }
-                                     }
-                                 } */
-
-
-                                
                              }
                          );
+
+
 
 
                         stopwatch.Stop();
                         MyOpenDocument.ed.WriteMessage("Прошло с момента операции:  " + stopwatch.Elapsed.Milliseconds + " мc.");
                         tr.Commit();
+                    }
 
-                        if (tempList.Count < selectionItem.SerializedAllHandel.Count)
-                        {
-                            MyOpenDocument.ed.WriteMessage($"\nВНИМАНИЕ: Найдено {tempList.Count} из {selectionItem.SerializedAllHandel.Count} объектов. Возможно, часть из них была удалена.");
-                        }
-                        else
-                        {
-                            MyOpenDocument.ed.WriteMessage($"\nНайдено {tempList.Count} объектов. Все на месте!");
-                        }
+
+                    //Выноска для визиуализации 
+                    RXClass dimensiontClass = RXClass.GetClass(typeof(Dimension));
+                    //Проверка что все объекты Mtext
+                    if (tempList.All(id => id.ObjectClass.IsDerivedFrom(dimensiontClass)))
+                    {
 
 
                         
+                          PromptKeywordOptions itemDraw = new PromptKeywordOptions("\n Дорисовать линии к исходным данным ?");
+                        itemDraw.Keywords.Add("Да");
+                        itemDraw.Keywords.Add("Нет");
+                        itemDraw.Keywords.Default ="Нет";
+                        itemDraw.AllowNone = false;
+                          PromptResult perItemDraw = MyOpenDocument.ed.GetKeywords(itemDraw);
+                          if (perItemDraw.Status != PromptStatus.OK)
+                          {
+                              MyOpenDocument.ed.WriteMessage("Отмена");
+                              return;
+                          }
 
 
+                          if (perItemDraw.Status == PromptStatus.OK && perItemDraw.StringResult == "Да")
+                          {
+                              drawLeader = true;
+                          } 
 
 
-                        SelectObjects(tempList);
+                        using (Transaction tr2 = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+                        {
+
+                            //Ранее выделенный объект 
+                            DBObject obj = tr2.GetObject(perItem.ObjectId, OpenMode.ForRead);
+
+
+                            BlockTable bt = tr2.GetObject(MyOpenDocument.dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
+                            BlockTableRecord modelSpace = tr2.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+
+
+                            if (drawLeader && obj is MText)
+                            {
+                                MText mText = obj as MText;
+
+                                string currentLayer = tr2.GetObject(MyOpenDocument.dbCurrent.Clayer, OpenMode.ForRead) is LayerTableRecord currLtr ? currLtr.Name : "0";
+
+                                // --- ШАГ 1: Создаем и настраиваем НОВУЮ мультивыноску с нуля ---
+                                MLeader mLeader = new MLeader();
+                                mLeader.SetDatabaseDefaults(MyOpenDocument.dbCurrent);
+                                mLeader.MLeaderStyle = MyOpenDocument.dbCurrent.MLeaderstyle;
+                                mLeader.ContentType = ContentType.MTextContent;
+
+                                // Устанавливаем текст и его положение. Текст пустой, как в вашем примере.
+                                MText newMtext = new MText() { Contents = "" };
+                                mLeader.MText = newMtext;
+                                mLeader.TextLocation = mText.Location + new Vector3d(0, 2, 0); // Положение текста берем из исходного MText
+                                mLeader.Layer = currentLayer;
+
+
+                                // --- ШАГ 2: Добавляем ее в чертеж ОДИН РАЗ ---
+                                modelSpace.AppendEntity(mLeader);
+                                tr2.AddNewlyCreatedDBObject(mLeader, true);
+
+                                int leaderIndex = mLeader.AddLeader();
+
+                                // Проходим по каждому ObjectId из списка
+                                foreach (ObjectId dimensionId in tempList)
+                                {
+                                    // Открываем объект как Dimension
+                                    Dimension dim = tr2.GetObject(dimensionId, OpenMode.ForRead) as Dimension;
+
+                                    // Пропускаем, если объект не является размером или был удален
+                                    if (dim == null) continue;
+
+                                    // Получаем центральную точку текста размера
+                                    Point3d dimensionTextPosition = dim.TextPosition;
+
+                                    // Добавляем новую линию в наш кластер и задаем положение ее стрелки
+                                    int newLeaderLineIndex = mLeader.AddLeaderLine(leaderIndex);
+
+                                    //mLeader.AddFirstVertex(newLeaderLineIndex, mText.Location);
+                                    mLeader.AddFirstVertex(newLeaderLineIndex, dimensionTextPosition);
+                                    mLeader.AddLastVertex(newLeaderLineIndex, mText.Location);
+                                }
+
+
+                            }
+                            tr2.Commit();
+                        }
                     }
 
+
+
+                    if (tempList.Count < selectionItem.SerializedAllHandel.Count)
+                    {
+                        MyOpenDocument.ed.WriteMessage($"\nВНИМАНИЕ: Найдено {tempList.Count} из {selectionItem.SerializedAllHandel.Count} объектов. Возможно, часть из них была удалена.");
+                    }
+                    else
+                    {
+                        MyOpenDocument.ed.WriteMessage($"\nНайдено {tempList.Count} объектов. Все на месте!");
+                    }
+
+                    //Выделить все
+                    SelectObjects(tempList);
                 }
+
+
             }
             catch (Exception ex)
             {
@@ -296,7 +362,7 @@ namespace ent
 
         }
 
-     
+
 
 
 
@@ -459,7 +525,7 @@ namespace ent
 
         }
 
-        
+
 
         [CommandMethod("цфф", CommandFlags.UsePickSet |
                      CommandFlags.Redraw | CommandFlags.Modal)] // название команды, вызываемой в Autocadw
@@ -654,7 +720,7 @@ namespace ent
         }
 
 
-       
+
         [CommandMethod("цффф")]
         public void AddDimensionsUniversal()
         {
@@ -663,14 +729,14 @@ namespace ent
             Editor ed = MyOpenDocument.ed;
 
             // --- Регенерация экрана ---
-           // ed.Regen();
+            // ed.Regen();
 
             // Выбор режима работы
             PromptKeywordOptions modeOptions = new PromptKeywordOptions("\nВыберите режим:");
             modeOptions.Keywords.Add("Сегменты");
             modeOptions.Keywords.Add("Подсегменты");
             modeOptions.Keywords.Add("ВложенныеПолилинии");
-            modeOptions.Keywords.Default= "Сегменты";
+            modeOptions.Keywords.Default = "Сегменты";
 
             PromptResult modeResult = ed.GetKeywords(modeOptions);
             if (modeResult.Status != PromptStatus.OK)
@@ -684,7 +750,7 @@ namespace ent
             // Запрос отступа для размеров
             PromptDoubleOptions offsetOptions = new PromptDoubleOptions("\nУкажите отступ размера от сегмента:");
             offsetOptions.AllowNegative = false;
-            offsetOptions.DefaultValue = 0.25;
+            offsetOptions.DefaultValue = 1.5;
 
             PromptDoubleResult offsetResult = ed.GetDouble(offsetOptions);
             if (offsetResult.Status != PromptStatus.OK)
@@ -831,7 +897,7 @@ namespace ent
                                 }
                             }
                         }
-                    } 
+                    }
 
                     // Сортируем точки вдоль сегмента
                     splitPoints = splitPoints.OrderBy(p => (p - startPoint).Length).ToList();
@@ -966,9 +1032,7 @@ namespace ent
                         // --- Начало логической группы "ИЛИ" ---
                         new TypedValue((int)DxfCode.Operator, "<OR"), 
 
-                        // Правило 1: Тип объекта - "POLYLINE" (старая тяжелая 3D полилиния)
-                        new TypedValue((int)DxfCode.Start, "POLYLINE"), 
-    
+                            
                         // Правило 2: Тип объекта - "LWPOLYLINE" (легковесная 2D полилиния)
                         new TypedValue((int)DxfCode.Start, "LWPOLYLINE"),
 
@@ -1009,64 +1073,67 @@ namespace ent
                 }
 
 
-              
 
+                // Перебор сегментов основной полилинии
                 int segCount = mainPl.Closed ? mainPl.NumberOfVertices : mainPl.NumberOfVertices - 1;
                 for (int i = 0; i < segCount; i++)
                 {
-                    int next = (i + 1) % mainPl.NumberOfVertices;
                     var p1 = mainPl.GetPoint3dAt(i);
-                    var p2 = mainPl.GetPoint3dAt(next);
+                    var p2 = mainPl.GetPoint3dAt((i + 1) % mainPl.NumberOfVertices);
+                    double segmentLength = p1.DistanceTo(p2);
+                    if (segmentLength < 1e-9) continue;
 
-                    var pts = new HashSet<Point3d>();
                     var segLine = new Line(p1, p2);
+                    var dir = (p2 - p1).GetNormal();
 
+                    // --- ШАГ 1: Находим все потенциальные отрезки на текущем сегменте ---
+                    var potentialSegments = new List<LineSegment3d>();
                     foreach (var pl in others)
                     {
                         var ic = new Point3dCollection();
                         pl.IntersectWith(segLine, Intersect.OnBothOperands, ic, IntPtr.Zero, IntPtr.Zero);
+
                         foreach (Point3d ip in ic)
-                            pts.Add(ip);
+                        {
+                            double effectiveLength = Math.Min(fullLength, segmentLength);
+                            var start = ip - dir * (double)(effectiveLength / 2.0);
+                            var end = ip + dir * (double)(effectiveLength / 2.0);
+                            potentialSegments.Add(new LineSegment3d(start, end));
+                        }
                     }
 
-                    var dir = (p2 - p1).GetNormal();
-                    string currentLayer = db.Clayer.GetObject(OpenMode.ForRead) is LayerTableRecord currLtr
-                                          ? currLtr.Name
-                                          : "0";
+                    if (potentialSegments.Count == 0) continue;
 
-                    foreach (var ip in pts)
+                    // --- ШАГ 2: Сортируем и сливаем пересекающиеся отрезки ---
+                    var mergedSegments = MergeOverlappingSegments(potentialSegments, p1);
+
+                    // --- ШАГ 3: Создаем геометрию из слитых отрезков ---
+                    string currentLayer = tr.GetObject(db.Clayer, OpenMode.ForRead) is LayerTableRecord currLtr ? currLtr.Name : "0";
+
+                    foreach (var mergedSegment in mergedSegments)
                     {
-                        var start = ip - dir * halfLength;
-                        var end = ip + dir * halfLength;
-
+                        // Создаем итоговую полилинию
                         var newPl = new Polyline();
-                        newPl.AddVertexAt(0, new Point2d(start.X, start.Y), 0, 0, 0);
-                        newPl.AddVertexAt(1, new Point2d(end.X, end.Y), 0, 0, 0);
+                        newPl.AddVertexAt(0, new Point2d(mergedSegment.StartPoint.X, mergedSegment.StartPoint.Y), 0, 0, 0);
+                        newPl.AddVertexAt(1, new Point2d(mergedSegment.EndPoint.X, mergedSegment.EndPoint.Y), 0, 0, 0);
                         newPl.Layer = currentLayer;
-                        ms.AppendEntity(newPl);
+                        ObjectId newPlineId = ms.AppendEntity(newPl);
                         tr.AddNewlyCreatedDBObject(newPl, true);
 
-
-
-                        // Добавляем мультивыноску если нужно
+                        // Добавляем мультивыноску в центр слитого сегмента
                         if (needMLeader)
                         {
+                            Point3d leaderTarget = mergedSegment.MidPoint;
                             string textForLeader = defaultText;
                             if (immediateTextInput)
                             {
-                                ZoomToEntity(newPl.ObjectId,3);
-                                var pStrOpts = new PromptStringOptions("\nВведите текст для мультивыноски:")
-                                {
-                                    AllowSpaces = true
-                                };
+                                ZoomToEntity(newPlineId, 3.0);
+                                var pStrOpts = new PromptStringOptions("\nВведите текст для мультивыноски:") { AllowSpaces = true };
                                 var pStrRes = ed.GetString(pStrOpts);
-                                if (pStrRes.Status == PromptStatus.OK)
-                                    textForLeader = pStrRes.StringResult;
-                                else
-                                    textForLeader = defaultText;
+                                textForLeader = (pStrRes.Status == PromptStatus.OK) ? pStrRes.StringResult : defaultText;
                             }
 
-                            MLeader mLeader = CreateMLeader(ip, textForLeader, db);
+                            MLeader mLeader = CreateMLeader(leaderTarget, textForLeader, db);
                             if (mLeader != null)
                             {
                                 mLeader.Layer = currentLayer;
@@ -1077,14 +1144,54 @@ namespace ent
                     }
                 }
 
+
                 tr.Commit();
             }
 
             ed.WriteMessage("\nОбработка завершена.");
         }
 
-       
-        
+        private List<LineSegment3d> MergeOverlappingSegments(List<LineSegment3d> segments, Point3d sortOrigin)
+        {
+            if (segments.Count < 2) return segments;
+
+            // Сортируем отрезки по расстоянию их стартовой точки от начала главного сегмента
+            var sorted = segments.OrderBy(s => s.StartPoint.DistanceTo(sortOrigin)).ToList();
+
+            var merged = new List<LineSegment3d>();
+            var currentMerge = sorted[0];
+
+            for (int i = 1; i < sorted.Count; i++)
+            {
+                var next = sorted[i];
+
+                // Проверяем, что конец текущего сливаемого отрезка 'currentMerge'
+                // находится дальше (или на том же уровне), чем начало следующего отрезка 'next'.
+                // Это условие означает, что отрезки пересекаются или касаются.
+                if (currentMerge.EndPoint.DistanceTo(sortOrigin) >= next.StartPoint.DistanceTo(sortOrigin) - 1e-9) // 1e-9 - допуск на погрешность
+                {
+                    // Есть пересечение. Расширяем текущий отрезок, выбирая самую дальнюю конечную точку.
+                    var newEnd = currentMerge.EndPoint.DistanceTo(sortOrigin) > next.EndPoint.DistanceTo(sortOrigin)
+                        ? currentMerge.EndPoint
+                        : next.EndPoint;
+                    currentMerge = new LineSegment3d(currentMerge.StartPoint, newEnd);
+                }
+                else
+                {
+                    // Пересечения нет. Завершаем текущий слитый отрезок, добавляем его в результат
+                    // и начинаем новый сливаемый отрезок со следующего элемента.
+                    merged.Add(currentMerge);
+                    currentMerge = next;
+                }
+            }
+            // Обязательно добавляем последний обработанный отрезок
+            merged.Add(currentMerge);
+
+            return merged;
+        }
+
+
+
 
 
 
@@ -1102,18 +1209,18 @@ namespace ent
             {
                 Contents = text,
                 //TextHeight = 2.5 // Можно поменять на нужный размер
-                Color= Color.FromColorIndex(ColorMethod.ByAci, 256) //Цвето по слою
-        };
+                Color = Color.FromColorIndex(ColorMethod.ByAci, 256) //Цвето по слою
+            };
 
             int leaderIndex = mleader.AddLeader();
             int leaderLineIndex = mleader.AddLeaderLine(leaderIndex);
             mleader.AddFirstVertex(leaderLineIndex, attachPoint);
-            mleader.AddLastVertex(leaderLineIndex, attachPoint+new Vector3d(1,3,0));
+            mleader.AddLastVertex(leaderLineIndex, attachPoint + new Vector3d(1, 3, 0));
             mleader.MText = mtext;
             mleader.DoglegLength = 1; //длина полки
-            //mleader.SetDogleg(leaderIndex, new Vector3d(0.7,0,0)); // отступ от стрелки
-           // mleader.ArrowSize = 2.0; // размер стрелки
-           mleader.LandingGap = 0.3; // расстояние между стрелкой и текстом
+                                      //mleader.SetDogleg(leaderIndex, new Vector3d(0.7,0,0)); // отступ от стрелки
+                                      // mleader.ArrowSize = 2.0; // размер стрелки
+            mleader.LandingGap = 0.3; // расстояние между стрелкой и текстом
 
             return mleader;
         }
@@ -1210,10 +1317,10 @@ namespace ent
         {
             // Находим границы прямоугольника
             Extents2d extents = GetPolylineExtents(pline);
-            double minX = extents.MinPoint.X ;
-            double maxX = extents.MaxPoint.X ;
-            double minY = extents.MinPoint.Y ;
-            double maxY = extents.MaxPoint.Y ;
+            double minX = extents.MinPoint.X;
+            double maxX = extents.MaxPoint.X;
+            double minY = extents.MinPoint.Y;
+            double maxY = extents.MaxPoint.Y;
 
             switch (direction)
             {
@@ -1221,7 +1328,7 @@ namespace ent
                     minY -= offset;
                     maxY += offset;
                     break;
-                        
+
                 case "ГОРИЗОНТАЛЬНО": // Лево/Право
                     minX -= offset;
                     maxX += offset;
@@ -1391,7 +1498,7 @@ namespace ent
                                     tempObjectID.Add(entity.ObjectId);
                                 }
                             }
-                            
+
                         }
                     }
                     trAdding.Commit();
@@ -1731,7 +1838,6 @@ namespace ent
                 }
             }
         }
-        
 
 
 
@@ -1741,7 +1847,8 @@ namespace ent
 
 
 
-        
+
+
 
         public static Point3dCollection createCirclePolygon(Point3d center, double radius, int segments)
         {
@@ -1773,11 +1880,11 @@ namespace ent
             Application.SetSystemVariable("SELECTIONCYCLING", 0);
             Application.SetSystemVariable("CTAB", "Model");
 
-           string layerName = "";
+            string layerName = "";
 
             using (Transaction tr = ed.Document.TransactionManager.StartTransaction())
             {
-                 // Выбор объекта для определения слоя
+                // Выбор объекта для определения слоя
                 PromptEntityOptions item = new PromptEntityOptions("\n Выбирите поллилинию принадлежащию одному слою\n");
                 PromptEntityResult perItem = MyOpenDocument.ed.GetEntity(item);
 
@@ -1798,7 +1905,7 @@ namespace ent
             }
 
             // Запрос масштаба
-            double scale = GetScale(ed) ?? 0.5; 
+            double scale = GetScale(ed) ?? 0.5;
 
             // Получение ограничивающих рамок
             List<Tuple<ObjectId, Point3d, Point3d>> boundingBoxes = GetBoundingBoxes(formatIds, db);
@@ -1812,7 +1919,7 @@ namespace ent
 
 
             Application.SetSystemVariable("CTAB", "Model");
-           
+
         }
         private List<ObjectId> GetFormatIdsOnLayer(Database db, string layerName)
         {
@@ -1839,7 +1946,7 @@ namespace ent
         }
 
 
-     
+
 
 
         private double? GetScale(Editor ed)
@@ -1855,12 +1962,12 @@ namespace ent
             PromptDoubleResult pdr = ed.GetDouble(pdo);
             return pdr.Status == PromptStatus.OK ? pdr.Value : (double?)null;
         }
-        
 
-/// <summary>
-/// Возвращает для каждого переданного объекта его ObjectId и ограничивающий прямоугольник (MinPoint, MaxPoint).
-/// </summary>
-private List<Tuple<ObjectId, Point3d, Point3d>> GetBoundingBoxes(List<ObjectId> entityIds, Database db)
+
+        /// <summary>
+        /// Возвращает для каждого переданного объекта его ObjectId и ограничивающий прямоугольник (MinPoint, MaxPoint).
+        /// </summary>
+        private List<Tuple<ObjectId, Point3d, Point3d>> GetBoundingBoxes(List<ObjectId> entityIds, Database db)
         {
             var result = new List<Tuple<ObjectId, Point3d, Point3d>>();
 
@@ -2013,7 +2120,7 @@ private List<Tuple<ObjectId, Point3d, Point3d>> GetBoundingBoxes(List<ObjectId> 
                     vp.CenterPoint = centerSheet;
                     vp.Width = width;
                     vp.Height = height;
-                   
+
 
                     // 5) Настраиваем, что показывать из модели
                     vp.ViewCenter = new Point2d(centerModel.X, centerModel.Y);
