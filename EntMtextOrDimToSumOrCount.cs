@@ -12,6 +12,8 @@ using Teigha.Colors;
 using System.Runtime.ConstrainedExecution;
 using System.Collections;
 using Teigha.DatabaseServices.Filters;
+using System.Net;
+
 
 
 
@@ -251,6 +253,7 @@ namespace ent
                     //Выноска для визиуализации 
                     RXClass dimensiontClass = RXClass.GetClass(typeof(Dimension));
                     //Проверка что все объекты Mtext
+
                     if (tempList.All(id => id.ObjectClass.IsDerivedFrom(dimensiontClass)))
                     {
 
@@ -301,7 +304,7 @@ namespace ent
                                 // Устанавливаем текст и его положение. Текст пустой, как в вашем примере.
                                 MText newMtext = new MText() { Contents = "" };
                                 mLeader.MText = newMtext;
-                                mLeader.TextLocation = mText.Location + new Vector3d(0, 2, 0); // Положение текста берем из исходного MText
+                                mLeader.TextLocation = mText.Location; // Положение текста берем из исходного MText
                                 mLeader.Layer = currentLayer;
 
 
@@ -957,7 +960,284 @@ namespace ent
             return new Point3d((p1.X + p2.X) / 2 + dir.X * offset, (p1.Y + p2.Y) / 2 + dir.Y * offset, 0);
         }
 
+        [CommandMethod("gnb")]
+        public void gnb()
+        {
 
+            MyOpenDocument.ed.WriteMessage("\nПостроенеи профиля ГНБ по методике \" СП 42 - 101 - 2003 Общие положения по проектированию и строительству газораспределительных систем из металлических и полиэтиленовых труб \" " );
+
+            MyOpenDocument.ed.WriteMessage("\n!ВНИМАНИЕ. Построение выполнять при масштабе 1:1 ");
+
+
+
+            // Выбираем точку входа ГНБ
+            PromptEntityOptions peoCircleIn = new PromptEntityOptions("\nВыберите точку входа ГНБ :");
+            peoCircleIn.SetRejectMessage("\nВыберите окружность");
+            peoCircleIn.AddAllowedClass(typeof(Circle), true);
+
+            PromptEntityResult perCircleIn = MyOpenDocument.ed.GetEntity(peoCircleIn);
+            if (perCircleIn.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nВыбор отменён.");
+                return;
+            }
+
+            // Выбираем угол входа ГНБ
+            PromptDoubleOptions pdoCircleInAngel = new PromptDoubleOptions("\nВведите угол входа точка входа в десятичных градусах:");
+            //Угол в радианах
+            pdoCircleInAngel.DefaultValue = 17.5;
+            pdoCircleInAngel.AllowNegative = false;
+            pdoCircleInAngel.AllowZero = false;
+
+            PromptDoubleResult pdrCircleInAngel = MyOpenDocument.ed.GetDouble(pdoCircleInAngel);
+
+            if (pdrCircleInAngel.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nВвод угла отменен.");
+                return;
+            }
+
+            //Нижняя точка
+            PromptEntityOptions peoCircleIn2 = new PromptEntityOptions("\nВыберите нижнюю точку входа ГНБ :");
+            peoCircleIn2.SetRejectMessage("\nВыберите окружность");
+            peoCircleIn2.AddAllowedClass(typeof(Circle), true);
+
+            PromptEntityResult perCircleIn2 = MyOpenDocument.ed.GetEntity(peoCircleIn2);
+            if (perCircleIn2.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nВыбор отменён.");
+                return;
+            }
+
+
+
+            //Выход
+
+            // Выбираем точку входа ГНБ
+            PromptEntityOptions peoCircleOut = new PromptEntityOptions("\nВыберите точку выхода ГНБ :");
+            peoCircleOut.SetRejectMessage("\nВыберите окружность");
+            peoCircleOut.AddAllowedClass(typeof(Circle), true);
+
+            PromptEntityResult perCircleOut = MyOpenDocument.ed.GetEntity(peoCircleOut);
+            if (perCircleOut.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nВыбор отменён.");
+                return;
+            }
+
+
+            // Выбираем угол выхода ГНБ
+            PromptDoubleOptions pdoCircleOutAngel = new PromptDoubleOptions("\nВведите угол выхода точка входа в десятичных градусах:");
+            //Угол в радианах
+            pdoCircleOutAngel.DefaultValue = 17.5;
+            pdoCircleOutAngel.AllowNegative = false;
+            pdoCircleOutAngel.AllowZero = false;
+
+            PromptDoubleResult pdrCircleOutAngel = MyOpenDocument.ed.GetDouble(pdoCircleOutAngel);
+
+            if (pdrCircleOutAngel.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nВвод угла отменен.");
+                return;
+            }
+
+            //Нижняя точка
+            PromptEntityOptions peoCircleOut2 = new PromptEntityOptions("\nВыберите нижнюю точку выхода ГНБ :");
+            peoCircleIn2.SetRejectMessage("\nВыберите окружность");
+            peoCircleIn2.AddAllowedClass(typeof(Circle), true);
+
+            PromptEntityResult perCircleOut2 = MyOpenDocument.ed.GetEntity(peoCircleOut2);
+            if (perCircleIn2.Status != PromptStatus.OK)
+            {
+                MyOpenDocument.ed.WriteMessage("\nВыбор отменён.");
+                return;
+            }
+
+            
+            //
+
+            //Вычисления радиуса обозначение из СП
+            double D1;
+            double D2;
+            bool isRevers = false;
+            using (var tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+            {
+            //Для входа
+                Circle CircleIn = tr.GetObject(perCircleIn.ObjectId, OpenMode.ForWrite) as Circle ;
+                Circle CircleIn2 = tr.GetObject(perCircleIn2.ObjectId, OpenMode.ForWrite) as Circle;
+
+                D1 = Math.Round((CircleIn.Center - CircleIn2.Center).Y,3) ;
+
+            //Для Выхода
+
+            
+                Circle CircleOut = tr.GetObject(perCircleOut.ObjectId, OpenMode.ForWrite) as Circle;
+                Circle CircleOut2 = tr.GetObject(perCircleOut2.ObjectId, OpenMode.ForWrite) as Circle;
+
+                D2 = Math.Round((CircleOut.Center - CircleOut2.Center).Y, 3);
+
+               
+                if (CircleIn.Center.Y> CircleOut.Center.Y)
+                {
+                    isRevers = true;
+                };
+
+                tr.Commit();
+            }
+
+
+
+            double alfa1 = pdrCircleInAngel.Value;
+            double R1 = D1 / (1 - Math.Cos(pdrCircleInAngel.Value * Math.PI / 180));
+            double l1 = 2 * Math.PI * R1 * alfa1 / 360;
+            //Смещение точки
+            double L1 = Math.Sqrt(Math.Pow(R1, 2) - Math.Pow(R1 - D1, 2));
+
+
+            double alfa2 = pdrCircleOutAngel.Value;
+            double R2 = D2 / (1 - Math.Cos(pdrCircleOutAngel.Value * Math.PI / 180));
+            double l2 = 2 * Math.PI * R2 * alfa2 / 360;
+
+            //Смещение точки
+            double L2 = Math.Sqrt(Math.Pow(R2, 2) - Math.Pow(R2 - D2, 2));
+
+
+            MyOpenDocument.ed.WriteMessage("\nα₁  = " + alfa1 + "°");
+            MyOpenDocument.ed.WriteMessage("\nD₁ = " + Math.Round(D1, 3) + " м.");
+            MyOpenDocument.ed.WriteMessage("\nR₁ = " + Math.Round(R1, 3) + " м.");
+            MyOpenDocument.ed.WriteMessage("\nl₁(расчет.) = " + Math.Round(l1, 3) + " м.");
+            MyOpenDocument.ed.WriteMessage("\nL₁(смещ.) = " + Math.Round(L1, 3) + " м.");
+
+            MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+
+            MyOpenDocument.ed.WriteMessage("\nα₂ = " + alfa2 + "°");
+            MyOpenDocument.ed.WriteMessage("\nD₂ = " + Math.Round(D2,3) + " м.");
+            MyOpenDocument.ed.WriteMessage("\nR₂ = " + Math.Round(R2, 3) + " м.");
+            MyOpenDocument.ed.WriteMessage("\nl₂(расчет.) = " + Math.Round(l2, 3) + " м.");
+            MyOpenDocument.ed.WriteMessage("\nL₂(смещ.) = " + Math.Round(L2, 3) + " м.");
+
+
+            if (isRevers) 
+            {
+                L1 = -L1;
+                L2 = -L2;
+            }
+
+            MyOpenDocument.ed.WriteMessage("\nИнверсия:"+isRevers.ToString());
+
+
+
+            Point3d coorR1;
+            Point3d coorR2;
+            using (var tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+            {
+
+                // Вход
+                Circle CircleIn = tr.GetObject(perCircleIn.ObjectId, OpenMode.ForWrite) as Circle;
+                Circle CircleIn2 = tr.GetObject(perCircleIn2.ObjectId, OpenMode.ForWrite) as Circle;
+                CircleIn2.Center = new Point3d(CircleIn.Center.X + L1, CircleIn2.Center.Y, CircleIn2.Center.Z);
+
+                //координаты радиуса для построения
+                coorR1 = CircleIn2.Center + new Point3d(0, R1, 0).GetAsVector();
+
+
+                MyOpenDocument.ed.WriteMessage("\nКоординаты R₁ " + coorR1.X + "," + coorR1.Y);
+
+
+                BlockTable bt = tr.GetObject(MyOpenDocument.dbCurrent.BlockTableId, OpenMode.ForRead) as BlockTable;
+                BlockTableRecord btr = tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+
+
+                // 3. Вычисляем начальный и конечный углы в радианах
+                Vector3d startVec = CircleIn.Center - coorR1;
+                Vector3d endVec = CircleIn2.Center - coorR1;
+
+                // Углы вычисляются относительно оси X в плоскости XY
+                Plane plane = new Plane(Point3d.Origin, Vector3d.ZAxis);
+                double startAngle = startVec.AngleOnPlane(plane);
+                double endAngle = endVec.AngleOnPlane(plane);
+
+                // 4. Создаем объект дуги (Arc)
+
+                if (isRevers)
+                {
+                    // 1. Сохраняем startAngle во временную переменную
+                    double temp = startAngle;
+                    // 2. Присваиваем startAngle значение endAngle
+                    startAngle = endAngle;
+                    // 3. Присваиваем endAngle сохраненное значение из temp
+                    endAngle = temp;
+                }
+
+                using
+                (
+                Arc arc = new Arc(coorR1, R1, startAngle, endAngle)
+                )
+                {
+                    // 5. Добавляем дугу в чертеж
+                    btr.AppendEntity(arc);
+                    tr.AddNewlyCreatedDBObject(arc, true);
+                }
+
+
+                //Выход
+                Circle CircleOut = tr.GetObject(perCircleOut.ObjectId, OpenMode.ForWrite) as Circle;
+                Circle CircleOut2 = tr.GetObject(perCircleOut2.ObjectId, OpenMode.ForWrite) as Circle;
+                CircleOut2.Center = new Point3d(CircleOut.Center.X - L2, CircleOut2.Center.Y, CircleOut2.Center.Z);
+
+
+                //координаты радиуса для построения
+                coorR2 = CircleOut2.Center + new Point3d(0, R2, 0).GetAsVector();
+
+
+                MyOpenDocument.ed.WriteMessage("\nКоординаты R₂ " + coorR2.X + "," + coorR2.Y);
+
+                Vector3d startVec2 = CircleOut.Center - coorR2;
+                Vector3d endVec2 = CircleOut2.Center - coorR2;
+
+                // Углы вычисляются относительно оси X в плоскости XY
+                Plane plane2 = new Plane(Point3d.Origin, Vector3d.ZAxis);
+                double startAngle2 = startVec2.AngleOnPlane(plane2);
+                double endAngle2 = endVec2.AngleOnPlane(plane2);
+
+                // 4. Создаем объект дуги (Arc)
+                if (isRevers)
+                {
+                    // 1. Сохраняем startAngle во временную переменную
+                    double temp = startAngle2;
+                    // 2. Присваиваем startAngle значение endAngle
+                    startAngle2 = endAngle2;
+                    // 3. Присваиваем endAngle сохраненное значение из temp
+                    endAngle2 = temp;
+                }
+
+
+                using 
+                (
+                    Arc arc = new Arc(coorR2, R2, endAngle2, startAngle2)
+                )
+                {
+                    // 5. Добавляем дугу в чертеж
+                    btr.AppendEntity(arc);
+                    tr.AddNewlyCreatedDBObject(arc, true);
+                }
+
+
+                //Дорисовать полилинию
+                if (CircleIn2.Center != CircleOut2.Center)
+                {
+                    Polyline poly = new Polyline();
+
+                    poly.AddVertexAt(0,new Point2d(CircleIn2.Center.X, CircleIn2.Center.Y),0,0,0);
+                    poly.AddVertexAt(1, new Point2d(CircleOut2.Center.X, CircleOut2.Center.Y), 0, 0, 0);
+                    btr.AppendEntity(poly);
+                    tr.AddNewlyCreatedDBObject(poly, true);
+
+                }
+                tr.Commit();
+                MyOpenDocument.ed.WriteMessage("\nДуга успешно создана.");
+            }
+        }
 
 
 
