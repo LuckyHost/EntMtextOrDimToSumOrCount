@@ -963,8 +963,8 @@ namespace ent
         [CommandMethod("gnb")]
         public void gnb()
         {
-
-            MyOpenDocument.ed.WriteMessage("\nПостроенеи профиля ГНБ по методике \" СП 42 - 101 - 2003 Общие положения по проектированию и строительству газораспределительных систем из металлических и полиэтиленовых труб \" " );
+            Config config = Config.LoadConfig();
+            MyOpenDocument.ed.WriteMessage("\nПостроенеи профиля ГНБ по методике \" СП 42 - 101 - 2003 Общие положения по проектированию и строительству газораспределительных систем из металлических и полиэтиленовых труб \" ");
 
             MyOpenDocument.ed.WriteMessage("\n!ВНИМАНИЕ. Построение выполнять при масштабе 1:1 ");
 
@@ -1053,49 +1053,125 @@ namespace ent
                 return;
             }
 
-            
+            TypeChangeAngel isRepeat= calculationGnb(perCircleIn, perCircleIn2, perCircleOut, perCircleOut2, pdrCircleInAngel.Value, pdrCircleOutAngel.Value );
+
+
+            if (isRepeat != TypeChangeAngel.Success)
+            {
+                double alfaAngelIn= config.defaultMaxAngelGnb;
+                MyOpenDocument.ed.WriteMessage("\nНачинаю подбирать угол с "+ config.defaultMaxAngelGnb + " по "+ config.defaultMinAngelGnb + "°");
+               
+
+                if (isRepeat == TypeChangeAngel.InAngel)
+                {
+                    TypeChangeAngel resultIn = TypeChangeAngel.Success;
+                    while (resultIn == TypeChangeAngel.Success)
+                    {
+
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        MyOpenDocument.ed.WriteMessage("\nУгол входа изменен на = " + alfaAngelIn + "°");
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        resultIn = calculationGnb(perCircleIn, perCircleIn2, perCircleOut, perCircleOut2, alfaAngelIn, pdrCircleOutAngel.Value);
+
+                        //Добавляем угла
+                        alfaAngelIn -= config.defaultDifAngelGnb;
+
+
+                    }
+
+
+                    if (alfaAngelIn <= config.defaultMinAngelGnb)
+                    {
+                        MyOpenDocument.ed.WriteMessage("\n У меня ничего не получилось в автоматическом режиме :(");
+                        return;
+                    }
+
+
+                }
+
+
+                if (isRepeat == TypeChangeAngel.OutAngel)
+                {
+                    double alfaAngelOut = config.defaultMaxAngelGnb;
+
+                    TypeChangeAngel resultOut = TypeChangeAngel.Success;
+
+                    while (resultOut == TypeChangeAngel.Success)
+                    {
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        MyOpenDocument.ed.WriteMessage("\nУгол Выхода изменен на = " + alfaAngelIn + "°");
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        resultOut = calculationGnb(perCircleIn, perCircleIn2, perCircleOut, perCircleOut2, alfaAngelIn, alfaAngelOut);
+
+                        //Добавляем угла
+                        alfaAngelOut -= config.defaultDifAngelGnb;
+                    }
+
+
+                    if (alfaAngelOut < config.defaultMinAngelGnb)
+                    {
+                        MyOpenDocument.ed.WriteMessage("\n У меня ничего не получилось в автоматическом режиме :(");
+                        return;
+                    }
+
+
+
+                }
+
+
+
+            }
+
+
+
+        }
+
+        private TypeChangeAngel calculationGnb(PromptEntityResult perCircleIn, PromptEntityResult perCircleIn2, PromptEntityResult perCircleOut, PromptEntityResult perCircleOut2, double pdrCircleInAngel, double pdrCircleOutAngel)
+        {
             //
 
             //Вычисления радиуса обозначение из СП
             double D1;
             double D2;
             bool isRevers = false;
-            using (var tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+            using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
             {
-            //Для входа
-                Circle CircleIn = tr.GetObject(perCircleIn.ObjectId, OpenMode.ForWrite) as Circle ;
+                //Для входа
+                Circle CircleIn = tr.GetObject(perCircleIn.ObjectId, OpenMode.ForWrite) as Circle;
                 Circle CircleIn2 = tr.GetObject(perCircleIn2.ObjectId, OpenMode.ForWrite) as Circle;
 
-                D1 = Math.Round((CircleIn.Center - CircleIn2.Center).Y,3) ;
+                D1 = Math.Round((CircleIn.Center - CircleIn2.Center).Y, 3);
 
-            //Для Выхода
+                //Для Выхода
 
-            
+
                 Circle CircleOut = tr.GetObject(perCircleOut.ObjectId, OpenMode.ForWrite) as Circle;
                 Circle CircleOut2 = tr.GetObject(perCircleOut2.ObjectId, OpenMode.ForWrite) as Circle;
 
                 D2 = Math.Round((CircleOut.Center - CircleOut2.Center).Y, 3);
 
-               
-                if (CircleIn.Center.Y> CircleOut.Center.Y)
+
+                if (CircleIn.Center.X > CircleOut.Center.X)
                 {
                     isRevers = true;
                 };
+
 
                 tr.Commit();
             }
 
 
 
-            double alfa1 = pdrCircleInAngel.Value;
-            double R1 = D1 / (1 - Math.Cos(pdrCircleInAngel.Value * Math.PI / 180));
+
+            double alfa1 = pdrCircleInAngel;
+            double R1 = D1 / (1 - Math.Cos(pdrCircleInAngel * Math.PI / 180));
             double l1 = 2 * Math.PI * R1 * alfa1 / 360;
             //Смещение точки
             double L1 = Math.Sqrt(Math.Pow(R1, 2) - Math.Pow(R1 - D1, 2));
 
 
-            double alfa2 = pdrCircleOutAngel.Value;
-            double R2 = D2 / (1 - Math.Cos(pdrCircleOutAngel.Value * Math.PI / 180));
+            double alfa2 = pdrCircleOutAngel;
+            double R2 = D2 / (1 - Math.Cos(pdrCircleOutAngel * Math.PI / 180));
             double l2 = 2 * Math.PI * R2 * alfa2 / 360;
 
             //Смещение точки
@@ -1111,31 +1187,32 @@ namespace ent
             MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
 
             MyOpenDocument.ed.WriteMessage("\nα₂ = " + alfa2 + "°");
-            MyOpenDocument.ed.WriteMessage("\nD₂ = " + Math.Round(D2,3) + " м.");
+            MyOpenDocument.ed.WriteMessage("\nD₂ = " + Math.Round(D2, 3) + " м.");
             MyOpenDocument.ed.WriteMessage("\nR₂ = " + Math.Round(R2, 3) + " м.");
             MyOpenDocument.ed.WriteMessage("\nl₂(расчет.) = " + Math.Round(l2, 3) + " м.");
             MyOpenDocument.ed.WriteMessage("\nL₂(смещ.) = " + Math.Round(L2, 3) + " м.");
 
 
-            if (isRevers) 
+            if (isRevers)
             {
                 L1 = -L1;
                 L2 = -L2;
             }
 
-            MyOpenDocument.ed.WriteMessage("\nИнверсия:"+isRevers.ToString());
+            MyOpenDocument.ed.WriteMessage("\nИнверсия:" + isRevers.ToString());
 
 
 
             Point3d coorR1;
             Point3d coorR2;
-            using (var tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
+            using (Transaction tr = MyOpenDocument.dbCurrent.TransactionManager.StartTransaction())
             {
 
                 // Вход
                 Circle CircleIn = tr.GetObject(perCircleIn.ObjectId, OpenMode.ForWrite) as Circle;
                 Circle CircleIn2 = tr.GetObject(perCircleIn2.ObjectId, OpenMode.ForWrite) as Circle;
                 CircleIn2.Center = new Point3d(CircleIn.Center.X + L1, CircleIn2.Center.Y, CircleIn2.Center.Z);
+
 
                 //координаты радиуса для построения
                 coorR1 = CircleIn2.Center + new Point3d(0, R1, 0).GetAsVector();
@@ -1180,10 +1257,62 @@ namespace ent
                 }
 
 
+                
                 //Выход
                 Circle CircleOut = tr.GetObject(perCircleOut.ObjectId, OpenMode.ForWrite) as Circle;
                 Circle CircleOut2 = tr.GetObject(perCircleOut2.ObjectId, OpenMode.ForWrite) as Circle;
                 CircleOut2.Center = new Point3d(CircleOut.Center.X - L2, CircleOut2.Center.Y, CircleOut2.Center.Z);
+
+
+                if (!isRevers)
+
+                {
+                    if (CircleIn2.Center.X > CircleOut.Center.X)
+                    {
+                        MyOpenDocument.ed.WriteMessage("\nНижняя точка входа выходит за пределы точки выхода ГНБ, X = " + CircleIn2.Center.X + "| X = " + CircleOut.Center.X);
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        MyOpenDocument.ed.WriteMessage("\nИзмените угол точки входа ГНБ");
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        return TypeChangeAngel.InAngel;
+
+                    }
+
+
+                    if (CircleOut2.Center.X < CircleIn.Center.X)
+                    {
+                        MyOpenDocument.ed.WriteMessage("\nНижняя точка выхода выходит за пределы точки входа ГНБ, X = " + CircleOut2.Center.X + "| X = " + CircleIn.Center.X);
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        MyOpenDocument.ed.WriteMessage("\nИзмените угол точки выхода ГНБ");
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        return TypeChangeAngel.OutAngel;
+
+                    }
+                }
+                else 
+                {
+
+                    if (CircleIn2.Center.X < CircleOut.Center.X)
+                    {
+                        MyOpenDocument.ed.WriteMessage("\nНижняя точка входа выходит за пределы точки выхода ГНБ, X = " + CircleIn2.Center.X + "| X = " + CircleOut.Center.X);
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        MyOpenDocument.ed.WriteMessage("\nИзмените угол точки входа ГНБ");
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        return TypeChangeAngel.InAngel;
+
+                    }
+
+
+                    if (CircleOut2.Center.X > CircleIn.Center.X)
+                    {
+                        MyOpenDocument.ed.WriteMessage("\nНижняя точка выхода выходит за пределы точки входа ГНБ, X = " + CircleOut2.Center.X + "| X = " + CircleIn.Center.X);
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        MyOpenDocument.ed.WriteMessage("\nИзмените угол точки выхода ГНБ");
+                        MyOpenDocument.ed.WriteMessage("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+                        return TypeChangeAngel.OutAngel;
+
+                    }
+                }
+               
 
 
                 //координаты радиуса для построения
@@ -1212,7 +1341,7 @@ namespace ent
                 }
 
 
-                using 
+                using
                 (
                     Arc arc = new Arc(coorR2, R2, endAngle2, startAngle2)
                 )
@@ -1228,7 +1357,7 @@ namespace ent
                 {
                     Polyline poly = new Polyline();
 
-                    poly.AddVertexAt(0,new Point2d(CircleIn2.Center.X, CircleIn2.Center.Y),0,0,0);
+                    poly.AddVertexAt(0, new Point2d(CircleIn2.Center.X, CircleIn2.Center.Y), 0, 0, 0);
                     poly.AddVertexAt(1, new Point2d(CircleOut2.Center.X, CircleOut2.Center.Y), 0, 0, 0);
                     btr.AppendEntity(poly);
                     tr.AddNewlyCreatedDBObject(poly, true);
@@ -1237,6 +1366,10 @@ namespace ent
                 tr.Commit();
                 MyOpenDocument.ed.WriteMessage("\nДуга успешно создана.");
             }
+            return TypeChangeAngel.Success ;
+
+
+
         }
 
 
